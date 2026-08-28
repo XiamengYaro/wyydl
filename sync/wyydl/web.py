@@ -189,6 +189,7 @@ def create_app(ctx: AppContext) -> FastAPI:
         nf = d.get("notify") or {}
         return {
             "schedule": d["schedule"], "layout": d["layout"], "naming": d.get("naming") or "",
+            "local_organize": d.get("local_organize") or "none",
             "chain": d["quality"].get("chain") or [],
             "upgrade_existing": d["quality"].get("upgrade_existing", True),
             "lrc": d["lyrics"].get("lrc", True), "embed": d["lyrics"].get("embed", True),
@@ -212,6 +213,7 @@ def create_app(ctx: AppContext) -> FastAPI:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=f"运行计划不是合法 cron:{e}")
         layout = payload.get("layout") if payload.get("layout") in ("archive", "playlist") else ctx.cfg.layout
+        organize = payload.get("local_organize") if payload.get("local_organize") in ("none", "flat", "artist", "album") else "none"
         chain = [str(x) for x in (payload.get("chain") or []) if str(x)]
         if not chain:
             raise HTTPException(status_code=400, detail="音质链不能为空")
@@ -228,7 +230,7 @@ def create_app(ctx: AppContext) -> FastAPI:
             if k in events_in:
                 events[k] = bool(events_in[k])
         new_cfg = Config({
-            "schedule": schedule, "layout": layout,
+            "schedule": schedule, "layout": layout, "local_organize": organize,
             "naming": str(payload.get("naming") or "").strip(),
             "quality": {"chain": chain, "upgrade_existing": bool(payload.get("upgrade_existing"))},
             "lyrics": {"lrc": bool(payload.get("lrc")), "embed": bool(payload.get("embed"))},

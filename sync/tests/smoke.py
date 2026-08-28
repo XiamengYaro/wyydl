@@ -167,7 +167,9 @@ _si = _st.pack(">HHHH", 4096, 4096, 0, 0) \
     + _st.pack(">Q", (44100 << 12) | (1 << 9) | (15 << 4)) + b"\x00" * 16 + b"\x00\x00"
 _mflac.write_bytes(b"fLaC" + b"\x80" + _st.pack(">I", 34)[1:] + _si)  # 最小合法 flac(仅 STREAMINFO)
 
-_eng2 = SyncEngine(config.Config.load(), st, _mock_api([
+_cfg2 = config.Config.load()
+_cfg2.d["local_organize"] = "artist"
+_eng2 = SyncEngine(_cfg2, st, _mock_api([
     {"songs": [{"id": 7, "name": "测试歌",
                 "ar": [{"id": 1, "name": "歌手A"}, {"id": 2, "name": "歌手B"}],
                 "al": {"id": 5, "name": "专辑X", "picUrl": ""}, "no": 3,
@@ -180,11 +182,13 @@ _lf = _eng2.local_files()
 ok("本地列表含未入库文件", any(x["name"] == "手动测试.flac" and not x["in_db"] and x["missing"] for x in _lf))
 _r = _eng2.match_local_file(7, str(_mflac))
 ok("手动匹配补全", _r["ok"] and _r["title"] == "测试歌" and _r["artist"] == "歌手A / 歌手B")
+ok("刮削分类移动到歌手目录", _r["path"].endswith("歌手A 歌手B/测试歌.flac") and not _mflac.exists())
+_newp = st.song(7)["file_path"]
 # 合成文件无真实音频帧,mutagen 拒绝写标签属预期;验证「部分未成功」被如实上报
 ok("合成文件标签失败被上报", any("标签写入失败" in w for w in (_r.get("warns") or [])))
-ok("匹配后生成 NFO", (_mflac.parent / "手动测试.nfo").exists()
-   and (_mflac.parent / "album.nfo").exists())
-ok("匹配后不再缺失", not any(x["path"] == str(_mflac) and x["missing"] for x in _eng2.local_files()))
+ok("移动后生成 NFO", (Path(_newp).parent / "测试歌.nfo").exists()
+   and (Path(_newp).parent / "album.nfo").exists())
+ok("移动后不再缺失", not any(x["path"] == _newp and x["missing"] for x in _eng2.local_files()))
 
 _eng3 = SyncEngine(config.Config.load(), st, _mock_api([
     {"songs": [{"id": 7, "name": "测试歌",
@@ -195,11 +199,11 @@ _eng3 = SyncEngine(config.Config.load(), st, _mock_api([
     {"album": {"name": "专辑X", "genre": ["Pop"], "company": "厂牌",
                "publishTime": 1072800000000, "description": ""}},
 ]))
-_r3 = _eng3.refetch_local(str(_mflac))
+_r3 = _eng3.refetch_local(_newp)
 ok("重新刮削", _r3["ok"] and _r3["title"] == "测试歌")
-_r4 = _eng3.edit_local(str(_mflac), "改标题", "改歌手", "改专辑", 5)
+_r4 = _eng3.edit_local(_newp, "改标题", "改歌手", "改专辑", 5)
 ok("手动修改信息", _r4["ok"] and st.song(7)["title"] == "改标题" and st.song(7)["artist"] == "改歌手")
-ok("手动修改后不再缺失", not any(x["path"] == str(_mflac) and x["missing"] for x in _eng3.local_files()))
+ok("手动修改后不再缺失", not any(x["path"] == _newp and x["missing"] for x in _eng3.local_files()))
 _a = _mock_api([{"result": {"songs": [{"id": 9, "name": "搜索曲", "ar": [{"name": "甲"}],
                                        "al": {"name": "辑"}, "dt": 180000}]}}])
 ok("搜索接口", _a.search("关键词")[0]["name"] == "搜索曲")
@@ -230,7 +234,7 @@ ok("非法 cron 被拒", bad.status_code == 400)
 bad = client.put("/api/settings", json={"schedule": "0 4 * * *", "chain": []})
 ok("空音质链被拒", bad.status_code == 400)
 good = client.put("/api/settings", json={
-    "schedule": "30 5 * * *", "layout": "archive", "chain": ["hires", "lossless"],
+    "schedule": "30 5 * * *", "layout": "archive", "local_organize": "album", "chain": ["hires", "lossless"],
     "upgrade_existing": True, "lrc": True, "embed": False, "mirror": False,
     "nfo": True,
     "notify_type": "feishu", "notify_url": "https://example.com/hook", "notify_secret": "",
@@ -240,7 +244,8 @@ good = client.put("/api/settings", json={
 ok("保存结构化设置", good.status_code == 200)
 ok("设置生效", cfg.d["schedule"] == "30 5 * * *" and cfg.d["web"]["token"] == "t1"
    and cfg.d["lyrics"]["embed"] is False and cfg.d["limits"]["download_concurrency"] == 2
-   and cfg.d["nfo"] is True and cfg.quality_chain == ["hires", "lossless"])
+   and cfg.d["nfo"] is True and cfg.d["local_organize"] == "album"
+   and cfg.quality_chain == ["hires", "lossless"])
 ok("通知事件生效", cfg.d["notify"]["events"]["on_failed"] is False
    and cfg.d["notify"]["events"]["on_start"] is True
    and cfg.d["notify"]["events"]["on_changes"] is True)

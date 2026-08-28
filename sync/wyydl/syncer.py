@@ -499,9 +499,13 @@ class SyncEngine:
         return sorted(out, key=lambda x: x["path"].casefold())
 
     def _scrape(self, sid: int, p: Path, detail: dict) -> dict:
-        """用网易云元数据补全本地文件:标签/封面/歌词/NFO,并登记入库。"""
+        """用网易云元数据补全本地文件:标签/封面/歌词/NFO;按「刮削分类」整理到规范位置并入库。"""
         meta = self._build_meta(sid, detail, ("未命名歌单", 0))
         warns: list[str] = []
+        org = self.cfg.d.get("local_organize") or "none"
+        final = self._organize_target(p, meta, org) if org in ("flat", "artist", "album") else p
+        moved = final != p
+
         lrc = ""
         lr = self.api.lyric(sid)
         if lr is None:
@@ -515,24 +519,61 @@ class SyncEngine:
         tw = tagger.tag_file(p, meta, cover, lrc if self.cfg.d["lyrics"].get("embed", True) else None)
         if tw:
             warns.append(tw)
+
+        if moved:
+            try:
+                final.parent.mkdir(parents=True, exist_ok=True)
+                downloader.shutil_move(p, final)
+                log.info("[organize] %s -> %s", p.name, final)
+            except Exception as e:
+                warns.append(f"移动失败:{e.__class__.__name__}")
+                final = p  # 移动失败则留在原位
+                moved = False
+        if moved and p.with_suffix(".lrc").exists():
+            try:
+                downloader.shutil_move(p.with_suffix(".lrc"), final.with_suffix(".lrc"))
+            except Exception:
+                pass
+
         self.state.upsert_song(
             sid=sid, title=meta["title"], artist=meta["artist"], album=meta["album"],
-            file_path=str(p), ext=p.suffix.lstrip(".").lower() or "mp3",
+            file_path=str(final), ext=final.suffix.lstrip(".").lower() or "mp3",
             track_no=int(meta.get("track") or 0), level="manual",
             downloaded_at=now_str(), status="ok",
         )
         if lrc and self.cfg.d["lyrics"].get("lrc", True):
             try:
-                p.with_suffix(".lrc").write_text(lrc, encoding="utf-8")
+                final.with_suffix(".lrc").write_text(lrc, encoding="utf-8")
             except Exception:
                 warns.append("歌词文件写入失败")
         if self.cfg.d.get("nfo", True):
             try:
-                self._write_nfo(p, meta, detail)
+                self._write_nfo(final, meta, detail)
             except Exception:
                 warns.append("NFO 写入失败")
-        log.info("[scrape] %s - %s <- %s", meta["artist"], meta["title"], p.name)
-        return {"ok": True, "title": meta["title"], "artist": meta["artist"], "warns": warns}
+        log.info("[scrape] %s - %s <- %s", meta["artist"], meta["title"], final.name)
+        return {"ok": True, "title": meta["title"], "artist": meta["artist"],
+                "path": str(final), "warns": warns}
+
+    def _organize_target(self, src: Path, meta: dict, mode: str) -> Path:
+        """刮削分类目标路径;同名冲突自动追加序号,不覆盖已有文件。"""
+        root = self._music_root()
+        title = tagger.sanitize(meta.get("title") or "未知标题")
+        artist = tagger.sanitize(meta.get("artist") or "未知歌手")
+        album = tagger.sanitize(meta.get("album") or "未知专辑")
+        ext = src.suffix.lower() or ".mp3"
+        if mode == "flat":
+            base = root
+        elif mode == "artist":
+            base = root / artist
+        else:  # album
+            base = root / artist / album
+        cand = base / f"{title}{ext}"
+        i = 2
+        while cand.exists() and cand.resolve() != src.resolve():
+            cand = base / f"{title} ({i}){ext}"
+            i += 1
+        return cand
 
     def match_local_file(self, sid: int, filepath: str) -> dict:
         """手动匹配:搜索选定的网易云曲目补全本地文件。"""

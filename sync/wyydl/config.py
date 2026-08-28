@@ -18,6 +18,7 @@ DEFAULTS: dict = {
     "schedule": "0 4 * * *",          # cron: 每天凌晨 4 点
     "api_base": os.environ.get("NCM_API", "http://ncm-api:3000"),
     "layout": "archive",              # archive=按歌手/专辑归档+m3u8 | playlist=按歌单分文件夹
+    "local_organize": "none",         # 刮削分类:none 不移动 / flat 歌曲平铺 / artist 按歌手 / album 按专辑
     "naming": "",                     # 留空用 layout 对应默认模板
     "playlists": [],                  # [{"id": 123, "name": "可选自定义名"}]
     "quality": {
