@@ -22,9 +22,13 @@ fpk/
 ├── wizard/
 │   ├── install                 # 安装向导:Web 面板端口、音乐保存位置(共享目录/自定义)
 │   └── config                  # 配置向导:安装后在应用设置中可随时修改这两项
-├── app/docker/
-│   ├── docker-compose.yaml     # ncm-api + wyydl-sync 双容器(由 appcenter 托管)
-│   └── sync/                   # 构建时由 build.sh 从仓库 sync/ 复制
+├── app/
+│   ├── docker/
+│   │   ├── docker-compose.yaml # ncm-api + wyydl-sync 双容器(由 appcenter 托管)
+│   │   └── sync/               # 构建时由 build.sh 从仓库 sync/ 复制
+│   └── ui/                     # 桌面入口:点击应用卡片直达 Web 面板
+│       ├── config              # .url 入口,port=${wyydl_port} 跟随安装向导
+│       └── images/             # icon_64.png / icon_256.png
 └── build.sh                    # 一键打包
 ```
 

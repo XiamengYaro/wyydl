@@ -1,0 +1,13 @@
+{
+  ".url": {
+    "wyydl.main": {
+      "title": "网易云歌单同步",
+      "icon": "images/icon_{0}.png",
+      "type": "iframe",
+      "protocol": "http",
+      "port": "${wyydl_port}",
+      "url": "/",
+      "allUsers": true
+    }
+  }
+}

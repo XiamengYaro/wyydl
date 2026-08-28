@@ -12,6 +12,11 @@
 
 同步位置:`fpk/manifest` 的 `version` 与 `sync/wyydl/__init__.py` 的 `__version__` 必须一致,并在本文件追加条目、更新 `fpk/manifest` 的 `changelog`。
 
+## 1.1.0 - 2026-08-28
+
+- 新增桌面/应用中心入口(`app/ui/config`):点击应用卡片即在 fnOS 桌面窗口内打开 Web 面板;入口端口使用 `${wyydl_port}` 模板变量,自动跟随安装向导配置。
+- 开发者与发布者均配置为 Xiameng(https://github.com/XiamengYaro )。
+
 ## 1.0.1 - 2026-08-28
 
 - 开发者信息:Xiameng(点击跳转 https://github.com/XiamengYaro )。
