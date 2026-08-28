@@ -1,3 +1,5 @@
+name: wyydl
+
 services:
   ncm-api:
     image: moefurina/ncm-api:latest
