@@ -36,9 +36,13 @@ def song_relative_path(meta: dict, layout: str, naming: str) -> Path:
     fname = safe_format(naming, track=track, pos=pos,
                         title=meta.get("title") or "未知标题",
                         artist=artist, album=album)
-    if layout == "archive":
-        return Path(artist) / album / f"{fname}"
-    return Path(sanitize(meta.get("playlist") or "未命名歌单")) / fname
+    if layout in ("archive", "album"):      # 按专辑分类
+        return Path(artist) / album / fname
+    if layout == "artist":                  # 按歌手分类
+        return Path(artist) / fname
+    if layout == "flat":                    # 歌曲平铺
+        return Path(fname)
+    return Path(sanitize(meta.get("playlist") or "未命名歌单")) / fname  # 按歌单
 
 
 def _cover_mime(data: bytes) -> str:

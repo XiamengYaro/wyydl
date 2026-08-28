@@ -53,7 +53,7 @@ ok("格式化缺失变量", safe_format("{pos:02d}. {artist} - {title}", pos=1, 
 
 # ---- 配置与凭证 ----
 cfg = config.Config.load()
-ok("默认配置生成", cfg.schedule == "0 4 * * *" and cfg.layout == "archive")
+ok("默认配置生成", cfg.schedule == "0 4 * * *" and cfg.layout == "album")
 cfg.d["schedule"] = "30 5 * * 1"
 cfg.save()
 ok("配置保存回读", config.Config.load().schedule == "30 5 * * 1")
@@ -168,7 +168,7 @@ _si = _st.pack(">HHHH", 4096, 4096, 0, 0) \
 _mflac.write_bytes(b"fLaC" + b"\x80" + _st.pack(">I", 34)[1:] + _si)  # 最小合法 flac(仅 STREAMINFO)
 
 _cfg2 = config.Config.load()
-_cfg2.d["local_organize"] = "artist"
+_cfg2.d["layout"] = "artist"
 _eng2 = SyncEngine(_cfg2, st, _mock_api([
     {"songs": [{"id": 7, "name": "测试歌",
                 "ar": [{"id": 1, "name": "歌手A"}, {"id": 2, "name": "歌手B"}],
@@ -182,12 +182,12 @@ _lf = _eng2.local_files()
 ok("本地列表含未入库文件", any(x["name"] == "手动测试.flac" and not x["in_db"] and x["missing"] for x in _lf))
 _r = _eng2.match_local_file(7, str(_mflac))
 ok("手动匹配补全", _r["ok"] and _r["title"] == "测试歌" and _r["artist"] == "歌手A / 歌手B")
-ok("刮削分类移动到歌手目录", _r["path"].endswith("歌手A 歌手B/测试歌.flac") and not _mflac.exists())
+ok("按歌手布局移动", _r["path"].endswith("歌手A 歌手B/测试歌.flac") and not _mflac.exists())
 _newp = st.song(7)["file_path"]
 # 合成文件无真实音频帧,mutagen 拒绝写标签属预期;验证「部分未成功」被如实上报
 ok("合成文件标签失败被上报", any("标签写入失败" in w for w in (_r.get("warns") or [])))
 ok("移动后生成 NFO", (Path(_newp).parent / "测试歌.nfo").exists()
-   and (Path(_newp).parent / "album.nfo").exists())
+   and (Path(_newp).parent / "artist.nfo").exists())
 ok("移动后不再缺失", not any(x["path"] == _newp and x["missing"] for x in _eng2.local_files()))
 
 _eng3 = SyncEngine(config.Config.load(), st, _mock_api([
@@ -201,8 +201,10 @@ _eng3 = SyncEngine(config.Config.load(), st, _mock_api([
 ]))
 _r3 = _eng3.refetch_local(_newp)
 ok("重新刮削", _r3["ok"] and _r3["title"] == "测试歌")
+_newp = st.song(7)["file_path"]  # refetch 按默认 album 布局移动了文件
 _r4 = _eng3.edit_local(_newp, "改标题", "改歌手", "改专辑", 5)
 ok("手动修改信息", _r4["ok"] and st.song(7)["title"] == "改标题" and st.song(7)["artist"] == "改歌手")
+_newp = st.song(7)["file_path"]
 ok("手动修改后不再缺失", not any(x["path"] == _newp and x["missing"] for x in _eng3.local_files()))
 _a = _mock_api([{"result": {"songs": [{"id": 9, "name": "搜索曲", "ar": [{"name": "甲"}],
                                        "al": {"name": "辑"}, "dt": 180000}]}}])
@@ -218,7 +220,7 @@ eng = type("E", (), {"cfg": cfg, "cookie_ok": lambda self: False, "running": Fal
                      "try_run": lambda self, ids=None, trigger="m": False})()
 client = TestClient(create_app(AppContext(cfg=cfg, state=st, api=api, engine=eng)))
 r = client.get("/api/status")
-ok("面板 /api/status", r.status_code == 200 and r.json()["layout"] == "archive")
+ok("面板 /api/status", r.status_code == 200 and r.json()["layout"] == "album")
 r = client.get("/")
 ok("面板首页", r.status_code == 200 and "网易云歌单同步" in r.text)
 r = client.get("/api/tracks/1")
@@ -234,7 +236,7 @@ ok("非法 cron 被拒", bad.status_code == 400)
 bad = client.put("/api/settings", json={"schedule": "0 4 * * *", "chain": []})
 ok("空音质链被拒", bad.status_code == 400)
 good = client.put("/api/settings", json={
-    "schedule": "30 5 * * *", "layout": "archive", "local_organize": "album", "chain": ["hires", "lossless"],
+    "schedule": "30 5 * * *", "layout": "flat", "chain": ["hires", "lossless"],
     "upgrade_existing": True, "lrc": True, "embed": False, "mirror": False,
     "nfo": True,
     "notify_type": "feishu", "notify_url": "https://example.com/hook", "notify_secret": "",
@@ -244,7 +246,7 @@ good = client.put("/api/settings", json={
 ok("保存结构化设置", good.status_code == 200)
 ok("设置生效", cfg.d["schedule"] == "30 5 * * *" and cfg.d["web"]["token"] == "t1"
    and cfg.d["lyrics"]["embed"] is False and cfg.d["limits"]["download_concurrency"] == 2
-   and cfg.d["nfo"] is True and cfg.d["local_organize"] == "album"
+   and cfg.d["nfo"] is True and cfg.layout == "flat"
    and cfg.quality_chain == ["hires", "lossless"])
 ok("通知事件生效", cfg.d["notify"]["events"]["on_failed"] is False
    and cfg.d["notify"]["events"]["on_start"] is True

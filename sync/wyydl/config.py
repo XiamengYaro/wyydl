@@ -17,8 +17,7 @@ ENV_MAP = {
 DEFAULTS: dict = {
     "schedule": "0 4 * * *",          # cron: 每天凌晨 4 点
     "api_base": os.environ.get("NCM_API", "http://ncm-api:3000"),
-    "layout": "archive",              # archive=按歌手/专辑归档+m3u8 | playlist=按歌单分文件夹
-    "local_organize": "none",         # 刮削分类:none 不移动 / flat 歌曲平铺 / artist 按歌手 / album 按专辑
+    "layout": "album",                # album=按专辑分类 | artist=按歌手分类 | flat=歌曲平铺 | playlist=按歌单分文件夹
     "naming": "",                     # 留空用 layout 对应默认模板
     "playlists": [],                  # [{"id": 123, "name": "可选自定义名"}]
     "quality": {
@@ -93,7 +92,10 @@ class Config:
 
     @property
     def layout(self) -> str:
-        return self.d["layout"] if self.d["layout"] in ("archive", "playlist") else "archive"
+        v = self.d["layout"]
+        if v == "archive":            # 旧值兼容:archive 即按专辑分类
+            return "album"
+        return v if v in ("flat", "artist", "album", "playlist") else "album"
 
     @property
     def quality_chain(self) -> list[str]:
@@ -104,7 +106,7 @@ class Config:
     def naming(self) -> str:
         if self.d.get("naming"):
             return str(self.d["naming"])
-        return "{track:02d}. {title}" if self.layout == "archive" else "{pos:02d}. {artist} - {title}"
+        return "{track:02d}. {title}" if self.layout != "playlist" else "{pos:02d}. {artist} - {title}"
 
     def playlist_ids(self) -> list[int]:
         out = []

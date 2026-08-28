@@ -385,23 +385,25 @@ class SyncEngine:
             year=str(meta.get("date") or ""), duration=int((d.get("dt") or 0) // 1000),
             genre=str(genre), ncm_id=str(meta.get("sid") or ""),
         )
-        if self.cfg.layout != "archive":
-            return
-        album_dir = final.parent
-        artist_dir = album_dir.parent
-        tracks = []
-        for s in self.state.all_songs():
-            if (s["status"] == "ok" and s["title"] and s["album"] == meta["album"]
-                    and s["file_path"] and Path(s["file_path"]).exists()):
-                tracks.append((int(s.get("track_no") or 0), s["title"]))
-        nfo.write_album_nfo(
-            album_dir / "album.nfo", title=meta["album"], artist=meta["artist"],
-            year=str(meta.get("date") or ""), genres=str(genre),
-            label=str(info.get("company") or ""), releasedate=releasedate,
-            plot=str(info.get("description") or ""), tracks=tracks,
-        )
-        nfo.write_artist_nfo(artist_dir / "artist.nfo", name=meta["album_artist"],
-                             genre=str(genre), ncm_id=ncm_aid)
+        if self.cfg.layout == "album":
+            album_dir = final.parent
+            tracks = []
+            for s in self.state.all_songs():
+                if (s["status"] == "ok" and s["title"] and s["album"] == meta["album"]
+                        and s["file_path"] and Path(s["file_path"]).exists()):
+                    tracks.append((int(s.get("track_no") or 0), s["title"]))
+            nfo.write_album_nfo(
+                album_dir / "album.nfo", title=meta["album"], artist=meta["artist"],
+                year=str(meta.get("date") or ""), genres=str(genre),
+                label=str(info.get("company") or ""), releasedate=releasedate,
+                plot=str(info.get("description") or ""), tracks=tracks,
+            )
+            nfo.write_artist_nfo(album_dir.parent / "artist.nfo", name=meta["album_artist"],
+                                 genre=str(genre), ncm_id=ncm_aid)
+        elif self.cfg.layout == "artist":
+            nfo.write_artist_nfo(final.parent / "artist.nfo", name=meta["album_artist"],
+                                 genre=str(genre), ncm_id=ncm_aid)
+        # flat/playlist 布局无歌手/专辑目录结构,不写这两级 NFO
 
     def _cover_for(self, detail: dict) -> bytes | None:
         al = (detail or {}).get("al") or {}
@@ -502,8 +504,8 @@ class SyncEngine:
         """用网易云元数据补全本地文件:标签/封面/歌词/NFO;按「刮削分类」整理到规范位置并入库。"""
         meta = self._build_meta(sid, detail, ("未命名歌单", 0))
         warns: list[str] = []
-        org = self.cfg.d.get("local_organize") or "none"
-        final = self._organize_target(p, meta, org) if org in ("flat", "artist", "album") else p
+        layout = self.cfg.layout
+        final = self._organize_target(p, meta, layout) if layout in ("flat", "artist", "album") else p
         moved = final != p
 
         lrc = ""
@@ -617,15 +619,27 @@ class SyncEngine:
         tw = tagger.tag_file(p, meta, None, None)
         if tw:
             warns.append(tw)
+        layout = self.cfg.layout
+        final = self._organize_target(p, meta, layout) if layout in ("flat", "artist", "album") else p
+        if final != p:
+            try:
+                final.parent.mkdir(parents=True, exist_ok=True)
+                downloader.shutil_move(p, final)
+                if p.with_suffix(".lrc").exists():
+                    downloader.shutil_move(p.with_suffix(".lrc"), final.with_suffix(".lrc"))
+                log.info("[organize] %s -> %s", p.name, final)
+            except Exception as e:
+                warns.append(f"移动失败:{e.__class__.__name__}")
+                final = p
         self.state.upsert_song(
             sid=sid, title=meta["title"], artist=meta["artist"], album=meta["album"],
-            file_path=str(p), ext=p.suffix.lstrip(".").lower() or "mp3",
+            file_path=str(final), ext=final.suffix.lstrip(".").lower() or "mp3",
             track_no=int(meta.get("track") or 0), level="manual",
             downloaded_at=now_str(), status="ok",
         )
         if self.cfg.d.get("nfo", True):
             try:
-                nfo.write_song_nfo(p.with_suffix(".nfo"), title=meta["title"], artist=meta["artist"],
+                nfo.write_song_nfo(final.with_suffix(".nfo"), title=meta["title"], artist=meta["artist"],
                                    album=meta["album"], albumartist=meta["artist"],
                                    track=int(meta.get("track") or 0))
             except Exception:

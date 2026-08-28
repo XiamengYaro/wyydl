@@ -1,6 +1,6 @@
 # wyydl · 网易云歌单定时同步(fnOS NAS)
 
-定时把指定网易云歌单以**当前账号可用的最高音质**同步到 NAS 音乐目录:自动协商音质(jymaster/hires/lossless…逐级降档)、下载校验(MD5)、写入完整标签(封面/歌词)、生成 NFO、按「歌手/专辑」归档并生成每个歌单的 `.m3u8`。自带 Web 控制面板与飞书 webhook 通知。
+定时把指定网易云歌单以**当前账号可用的最高音质**同步到 NAS 音乐目录:自动协商音质(jymaster/hires/lossless…逐级降档)、下载校验(MD5)、写入完整标签(封面/歌词)、生成 NFO、下载布局可选(按专辑/按歌手/歌曲平铺/按歌单)并为每个歌单生成 `.m3u8`。自带 Web 控制面板与飞书 webhook 通知。
 
 API 服务:[NeteaseCloudMusicApiEnhanced/api-enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced)(Docker 镜像 `moefurina/ncm-api`)。
 
@@ -65,7 +65,7 @@ docker exec wyydl-sync python -m wyydl.main --once --playlist 24381616
 
 ```
 /vol1/media/music/
-├── 周杰伦/叶惠美/03. 晴天.flac      # 按歌手/专辑归档(layout: archive)
+├── 周杰伦/叶惠美/03. 晴天.flac      # 按专辑分类(layout: album,可选 artist/flat/playlist)
 ├── 03. 晴天.nfo                     # 单曲元数据;专辑/歌手目录另有 album.nfo、artist.nfo
 ├── .lrc 歌词与内嵌封面随文件生成
 ├── 我的喜欢的音乐.m3u8              # 每个歌单一个播放列表
@@ -76,7 +76,7 @@ docker exec wyydl-sync python -m wyydl.main --once --playlist 24381616
 
 ```yaml
 schedule: "0 4 * * *"        # cron
-layout: archive              # archive=歌手/专辑 + m3u8 | playlist=按歌单分文件夹
+layout: album                # album=按专辑 | artist=按歌手 | flat=歌曲平铺 | playlist=按歌单(旧值 archive 自动兼容)
 quality:
   chain: [jymaster, hires, lossless, exhigh, standard]
   upgrade_existing: true     # 出现更高音质自动重下
@@ -96,6 +96,6 @@ web: {enabled: true, port: 8286, token: ""}   # token 建议在局域网不可�
 
 - **音质**:先按 `privilege.maxBrLevel`(歌曲上限)× `dlLevel`(账号上限)× 配置链取目标档;取流返回试听片段(`freeTrialInfo`)或空链时逐档降档;下载后校验大小与 MD5。
 - **增量**:SQLite 记录每首歌的文件/音质/校验值;只处理新增与可升级曲目;文件改动不会重复下载。
-- **NFO**:下载完成后自动写单曲 `<歌名>.nfo`(标题/歌手/专辑/音轨号/时长/流派/网易云 ID);归档布局下还会在专辑、歌手目录写 `album.nfo` 与 `artist.nfo`(流派/厂牌/发行日期/简介/曲目列表,来自 `/album` 接口,按专辑缓存请求)。
+- **NFO**:下载完成后自动写单曲 `<歌名>.nfo`(标题/歌手/专辑/音轨号/时长/流派/网易云 ID);按专辑布局下还会在专辑、歌手目录写 `album.nfo` 与 `artist.nfo`(按歌手布局写 `artist.nfo`)(流派/厂牌/发行日期/简介/曲目列表,来自 `/album` 接口,按专辑缓存请求)。
 - **删除**:默认只从 m3u8 移除不删文件;`mirror: true` 时移入 `_trash`。
 - **风控**:全部请求经自建 ncm-api,带 1–3s 随机间隔;不自动化登录;`MUSIC_U` 过期时飞书通知提醒重扫。

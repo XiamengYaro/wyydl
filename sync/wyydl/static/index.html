@@ -157,18 +157,12 @@
       <label class="field">运行计划(cron,5 段)
         <input type="text" id="sSchedule" placeholder="0 4 * * * = 每天 04:00">
       </label>
-      <label class="field">文件布局
+      <label class="field">下载文件布局<span class="hint">匹配/刮削后的本地文件同样按此整理</span>
         <select id="sLayout">
-          <option value="archive">按歌手/专辑归档 + m3u8(推荐)</option>
-          <option value="playlist">按歌单分文件夹</option>
-        </select>
-      </label>
-      <label class="field">刮削分类<span class="hint">手动匹配/重新刮削/编辑后的文件如何整理</span>
-        <select id="sOrganize">
-          <option value="none">不移动(保持原位)</option>
-          <option value="flat">歌曲平铺</option>
+          <option value="album">按专辑分类(推荐,含 m3u8)</option>
           <option value="artist">按歌手分类</option>
-          <option value="album">按专辑分类</option>
+          <option value="flat">歌曲平铺</option>
+          <option value="playlist">按歌单分文件夹</option>
         </select>
       </label>
       <label class="field">命名模板<span class="hint">可用变量 {track} {pos} {title} {artist} {album};留空用布局默认</span>
@@ -370,7 +364,7 @@ const NOTIFY_EVENTS = [
 ];
 async function loadSettings() {
   const s = await api('/api/settings');
-  $('#sSchedule').value = s.schedule; $('#sLayout').value = s.layout; $('#sOrganize').value = s.local_organize; $('#sNaming').value = s.naming;
+  $('#sSchedule').value = s.schedule; $('#sLayout').value = s.layout; $('#sNaming').value = s.naming;
   $('#sMirror').value = String(!!s.mirror);
   $('#sConc').value = s.concurrency; $('#sDelayMin').value = s.delay_min; $('#sDelayMax').value = s.delay_max;
   $('#sToken').value = s.web_token; $('#sWebPort').value = s.web_port; $('#sWebEnabled').checked = s.web_enabled;
@@ -387,7 +381,6 @@ function collectSettings() {
   return {
     schedule: $('#sSchedule').value.trim(),
     layout: $('#sLayout').value,
-    local_organize: $('#sOrganize').value,
     naming: $('#sNaming').value.trim(),
     mirror: $('#sMirror').value === 'true',
     chain: LEVELS.map(([k]) => k).filter(k => $(`#sChain input[value=${k}]`).checked),
