@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# 本地运行数据(config/secret.yaml、状态库、日志、音乐,不入库)
+sync/data/
+
+# 构建产物
+fpk/wyydl.fpk
+fpk/app/docker/sync/
+
+# macOS
+.DS_Store

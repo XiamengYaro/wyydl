@@ -1,0 +1,12 @@
+appname          = wyydl
+version          = 1.0.1
+display_name     = 网易云歌单同步
+desc             = 定时同步网易云音乐歌单到本地:自动协商最高音质、嵌入封面/歌词、生成 NFO 元数据,内置 Web 控制面板(http://NAS_IP:8286)与飞书通知。基于 api-enhanced 与 ncmdump-go。仅供个人学习与备份,请尊重版权。
+platform         = all
+source           = thirdparty
+maintainer       = Xiameng
+maintainer_url   = https://github.com/XiamengYaro
+service_port     = 8286
+ctl_stop         = true
+checkport        = false
+changelog        = 1.0.1:开发者信息修正;1.0.0:首个版本,安装向导支持自定义 Web 面板端口与音乐保存目录。

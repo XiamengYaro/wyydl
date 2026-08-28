@@ -1,0 +1,11 @@
+#!/bin/bash
+# 配置变更后(应用设置中的配置向导):应用新端口/目录并重建容器
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/common.sh"
+
+wyydl_apply_settings || exit 1
+
+docker compose -f "${TRIM_APPDEST}/docker/docker-compose.yaml" up -d >/dev/null 2>&1 || true
+exit 0

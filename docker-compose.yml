@@ -1,0 +1,41 @@
+# 网易云歌单同步 - fnOS 部署
+# 用法:fnOS Docker「项目/Compose」指向本文件,或 SSH: docker compose up -d --build
+services:
+  ncm-api:
+    image: moefurina/ncm-api:latest
+    container_name: ncm-api
+    restart: unless-stopped
+    environment:
+      # 容器内 request 库会读这些代理变量,必须显式清空,否则全部请求失败(官方 README 要求)
+      http_proxy: ""
+      https_proxy: ""
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      no_proxy: ""
+      NO_PROXY: ""
+      ENABLE_FLAC: "true"
+      SELECT_MAX_BR: "true"
+      ENABLE_GENERAL_UNBLOCK: "true"
+    ports:
+      - "127.0.0.1:3000:3000"   # 仅本机/SSH 隧道可访问,不暴露局域网
+    networks: [wyydl]
+
+  wyydl-sync:
+    build: ./sync
+    container_name: wyydl-sync
+    restart: unless-stopped
+    depends_on: [ncm-api]
+    environment:
+      - TZ=Asia/Shanghai
+      - NCM_API=http://ncm-api:3000
+    ports:
+      - "8286:8286"             # Web 控制面板
+    volumes:
+      - /vol1/appdata/wyydl/config:/config
+      - /vol1/appdata/wyydl/db:/db
+      - /vol1/appdata/wyydl/logs:/logs
+      - /vol1/media/music:/music
+    networks: [wyydl]
+
+networks:
+  wyydl:

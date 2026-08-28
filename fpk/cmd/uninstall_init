@@ -1,0 +1,5 @@
+#!/bin/bash
+# 卸载前:清理容器与网络(保留 /vol/@appdata/wyydl 与共享目录 wyydl/music 中的数据)
+
+docker compose -f "${TRIM_APPDEST}/docker/docker-compose.yaml" down >/dev/null 2>&1 || true
+exit 0

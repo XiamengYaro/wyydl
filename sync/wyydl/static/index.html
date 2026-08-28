@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wyydl · 网易云歌单同步</title>
+<style>
+  :root{
+    --bg:#0f1115;--card:#171a21;--line:#262b36;--text:#e8eaf0;--dim:#8b93a5;
+    --acc:#e14e5c;--ok:#3fb96e;--warn:#e0a33c;--err:#e05656;--radius:10px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+  a{color:var(--acc);text-decoration:none}
+  header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    padding:14px 22px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+  header h1{font-size:17px;margin:0;font-weight:600}
+  header h1 small{color:var(--dim);font-weight:400;margin-left:8px}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;
+    border:1px solid var(--line);color:var(--dim);font-size:12px;white-space:nowrap}
+  .chip b{color:var(--text);font-weight:500}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+  .dot.ok{background:var(--ok)}.dot.err{background:var(--err)}.dot.run{background:var(--warn);animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.3}}
+  main{padding:20px 22px;max-width:1200px;margin:0 auto;display:grid;gap:16px}
+  .row{display:grid;gap:16px;grid-template-columns:1fr 1fr}
+  @media(max-width:900px){.row{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;min-width:0}
+  .row>*{min-width:0}
+  .card h2{font-size:14px;margin:0 0 12px;color:var(--dim);font-weight:600;letter-spacing:.05em}
+  .btn{border:1px solid var(--line);background:#1f242f;color:var(--text);padding:7px 14px;
+    border-radius:8px;cursor:pointer;font-size:13px}
+  .btn:hover{border-color:#3a4254}
+  .btn.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+  .btn.primary:disabled,.btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.mini{padding:2px 9px;font-size:12px;border-radius:6px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{color:var(--dim);text-align:left;font-weight:500;padding:4px 8px;border-bottom:1px solid var(--line)}
+  td{padding:6px 8px;border-bottom:1px solid #1d212b;word-break:break-word}
+  tr:hover td{background:#1a1e27}
+  .tag{font-size:11px;padding:1px 7px;border-radius:5px;background:#222836;color:var(--dim)}
+  .tag.ok{background:#12331f;color:var(--ok)}
+  .tag.bad{background:#3a1d1d;color:var(--err)}
+  .tag.lv{background:#1c2a44;color:#7aa7e8}
+  input[type=text],input[type=number],input[type=password],select,textarea{
+    background:#10131a;border:1px solid var(--line);border-radius:8px;
+    color:var(--text);padding:7px 10px;font:inherit;width:100%}
+  textarea{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;min-height:300px;white-space:pre}
+  input[type=checkbox]{accent-color:var(--acc);width:15px;height:15px}
+  .inline{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .inline input{flex:1;min-width:100px}
+  .fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px 18px;margin-bottom:14px}
+  .field{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--dim)}
+  .field .hint{font-size:11px;opacity:.7}
+  .sect{font-size:12px;color:var(--dim);margin:14px 0 8px;font-weight:600;letter-spacing:.04em}
+  .ckrow{display:flex;flex-wrap:wrap;gap:8px 20px}
+  .ckrow label{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer}
+  .ckrow .muted{font-size:11px}
+  .muted{color:var(--dim);font-size:12px}
+  #log{background:#0b0d11;border:1px solid var(--line);border-radius:8px;padding:10px;
+    font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;max-height:300px;overflow:auto;white-space:pre-wrap;
+    overflow-wrap:anywhere;word-break:break-all}
+  .recent{max-height:200px;overflow:auto;display:grid;gap:4px;margin-top:10px;font-size:12.5px}
+  .dl-head{display:flex;justify-content:space-between;gap:10px;font-size:12.5px}
+  .dl-head>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bar.thin{height:3px;margin:2px 0 8px}
+  .bar.thin>i{transition:width .4s}
+  .bar{height:6px;border-radius:4px;background:#222836;overflow:hidden;margin:8px 0}
+  .bar i{display:block;height:100%;background:var(--acc);width:0%;transition:width .5s}
+  dialog{background:var(--card);color:var(--text);border:1px solid var(--line);
+    border-radius:12px;padding:22px;max-width:600px;width:94vw}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  #qrimg{width:230px;height:230px;background:#fff;border-radius:8px;display:block;margin:12px auto}
+  #tracks td:first-child{color:var(--dim);width:34px}
+  .stat-num{font-size:22px;font-weight:600}
+  .stats{display:flex;gap:26px;flex-wrap:wrap}
+  .stats .muted{font-size:12px}
+  details{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:12px}
+  summary{cursor:pointer;color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>网易云歌单同步 <small id="ver"></small></h1>
+  <span class="chip"><span class="dot" id="dotCookie"></span>登录态 <b id="cookieTxt">…</b></span>
+  <span class="chip">下次运行 <b id="nextRun">-</b></span>
+  <span class="chip">计划 <b id="cronTxt">-</b></span>
+  <span class="chip">布局 <b id="layoutTxt">-</b></span>
+  <span style="flex:1"></span>
+  <button class="btn primary" id="btnSync">立即同步</button>
+  <button class="btn" id="btnLogin">扫码登录</button>
+</header>
+
+<main>
+  <section class="card" id="progressCard" style="display:none">
+    <h2>同步进行中</h2>
+    <div class="inline" style="justify-content:space-between">
+      <b id="progStage">-</b><span class="muted" id="progDetail"></span>
+    </div>
+    <div class="bar"><i id="progBar"></i></div>
+    <div class="sect" id="progActiveLabel" style="display:none;margin:10px 0 4px">正在下载</div>
+    <div id="progActive" class="recent" style="margin-top:0"></div>
+    <div class="sect" id="progRecentLabel" style="display:none;margin:10px 0 4px">最近完成</div>
+    <div id="progRecent" class="recent" style="margin-top:0"></div>
+  </section>
+
+  <section class="card">
+    <h2>歌单</h2>
+    <div class="inline" style="margin-bottom:12px">
+      <input type="text" id="plId" placeholder="歌单 ID(网页版歌单地址里的数字)">
+      <input type="text" id="plName" placeholder="自定义名称(可空)" style="max-width:200px">
+      <button class="btn" id="btnAdd">添加</button>
+      <button class="btn" id="btnAcc">账号歌单</button>
+    </div>
+    <table><thead><tr><th>歌单</th><th>曲目</th><th>已入库</th><th>等待</th><th>失败</th><th>最近同步</th><th></th></tr></thead>
+    <tbody id="plBody"></tbody></table>
+    <p class="muted">布局为 archive 时按「歌手/专辑」归档,并为每个歌单生成同名 .m3u8(位于音乐根目录)。</p>
+  </section>
+
+  <div class="row">
+    <section class="card">
+      <h2>最近运行</h2>
+      <div class="stats" id="lastStats" style="margin-bottom:10px"></div>
+      <table><thead><tr><th>时间</th><th>状态</th><th>新增</th><th>升级</th><th>失败</th><th>NCM</th></tr></thead>
+      <tbody id="runBody"></tbody></table>
+    </section>
+    <section class="card">
+      <h2>运行日志 <button class="btn mini" id="btnLog" style="float:right">刷新</button></h2>
+      <div id="log">(空)</div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>设置
+      <span style="float:right">
+        <button class="btn mini" id="btnNotify">测试飞书通知</button>
+        <button class="btn mini primary" id="btnSaveSettings">保存设置</button>
+      </span>
+    </h2>
+
+    <div class="sect">同步计划与文件</div>
+    <div class="fgrid">
+      <label class="field">运行计划(cron,5 段)
+        <input type="text" id="sSchedule" placeholder="0 4 * * * = 每天 04:00">
+      </label>
+      <label class="field">文件布局
+        <select id="sLayout">
+          <option value="archive">按歌手/专辑归档 + m3u8(推荐)</option>
+          <option value="playlist">按歌单分文件夹</option>
+        </select>
+      </label>
+      <label class="field">命名模板<span class="hint">可用变量 {track} {pos} {title} {artist} {album};留空用布局默认</span>
+        <input type="text" id="sNaming" placeholder="{track:02d}. {title}">
+      </label>
+      <label class="field">歌单移除歌曲时
+        <select id="sMirror">
+          <option value="false">保留本地文件(推荐)</option>
+          <option value="true">移入 _trash 回收目录</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="sect">音质(勾选的档位参与降档,顺序固定从高到低)</div>
+    <div class="ckrow" id="sChain"></div>
+    <div class="ckrow" style="margin-top:8px">
+      <label><input type="checkbox" id="sUpgrade"> 发现更高音质时自动重新下载</label>
+    </div>
+
+    <div class="sect">歌词、NFO 与 NCM 兜底</div>
+    <div class="ckrow">
+      <label><input type="checkbox" id="sLrc"> 生成同名 .lrc 歌词文件</label>
+      <label><input type="checkbox" id="sEmbed"> 歌词嵌入音频标签</label>
+      <label><input type="checkbox" id="sNfo"> 生成 NFO 元数据(album.nfo / artist.nfo,Jellyfin/Emby)</label>
+      <label><input type="checkbox" id="sNcm"> 处理 _ncm_inbox 内的 .ncm 文件</label>
+    </div>
+
+    <div class="sect">通知</div>
+    <div class="fgrid">
+      <label class="field">通知类型
+        <select id="sNotifyType">
+          <option value="feishu">飞书机器人</option>
+          <option value="webhook">通用 JSON webhook</option>
+        </select>
+      </label>
+      <label class="field">Webhook 地址
+        <input type="text" id="sNotifyUrl" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxx">
+      </label>
+      <label class="field">加签密钥<span class="hint">机器人开启「签名校验」时填写</span>
+        <input type="password" id="sNotifySecret" placeholder="可选">
+      </label>
+    </div>
+
+    <div class="sect">性能与面板</div>
+    <div class="fgrid">
+      <label class="field">下载并发数(1–8)
+        <input type="number" id="sConc" min="1" max="8">
+      </label>
+      <label class="field">API 请求间隔(秒,随机区间)
+        <div class="inline"><input type="number" id="sDelayMin" step="0.5" min="0"><span class="muted">~</span><input type="number" id="sDelayMax" step="0.5" min="0"></div>
+      </label>
+      <label class="field">面板访问令牌<span class="hint">设置后访问面板需输入;改令牌后浏览器会提示重输</span>
+        <input type="text" id="sToken" placeholder="留空 = 不启用">
+      </label>
+      <label class="field">面板端口<span class="hint">改动后需同步修改 compose 端口映射并重启容器</span>
+        <input type="number" id="sWebPort" min="1" max="65535">
+      </label>
+    </div>
+    <div class="ckrow">
+      <label><input type="checkbox" id="sWebEnabled"> 启用 Web 面板</label>
+    </div>
+
+    <details>
+      <summary>高级:直接编辑 config.yaml(含 playlists / api_base 等全部字段)</summary>
+      <textarea id="cfgText" spellcheck="false" style="margin-top:10px"></textarea>
+      <div style="margin-top:8px;text-align:right">
+        <button class="btn mini primary" id="btnSave">应用 YAML</button>
+      </div>
+    </details>
+  </section>
+</main>
+
+<dialog id="dlg">
+  <div id="dlgBody"></div>
+  <div style="text-align:right;margin-top:14px"><button class="btn" onclick="dlg.close()">关闭</button></div>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+let token = localStorage.getItem('wyydl_token') || '';
+let pollTimer = null;
+
+async function api(path, opt = {}) {
+  opt.headers = Object.assign({'X-Token': token, 'Content-Type': 'application/json'}, opt.headers || {});
+  if (opt.body && typeof opt.body !== 'string') opt.body = JSON.stringify(opt.body);
+  const r = await fetch(path, opt);
+  if (r.status === 401) {
+    token = prompt('请输入访问令牌(web.token,留空表示未启用):') || '';
+    localStorage.setItem('wyydl_token', token);
+    throw new Error('401');
+  }
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status);
+  return r.json();
+}
+
+function esc(s){return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+/* ---------- 状态轮询 ---------- */
+async function refreshStatus() {
+  let s;
+  try { s = await api('/api/status'); } catch { return; }
+  $('#ver').textContent = 'v' + s.version;
+  $('#dotCookie').className = 'dot ' + (s.cookie_ok ? 'ok' : 'err');
+  $('#cookieTxt').textContent = s.cookie_ok ? '有效' : '失效,请扫码';
+  $('#nextRun').textContent = (s.next_run || '-').replace('T', ' ');
+  $('#cronTxt').textContent = s.schedule;
+  $('#layoutTxt').textContent = s.layout === 'archive' ? '歌手/专辑归档' : '按歌单';
+  $('#btnSync').disabled = s.running;
+  $('#btnSync').textContent = s.running ? '同步中…' : '立即同步';
+
+  $('#progressCard').style.display = s.running ? '' : 'none';
+  if (s.running && s.progress) {
+    const p = s.progress;
+    $('#progStage').textContent = p.stage || '';
+    if (p.done != null) {
+      $('#progDetail').textContent = `${p.done} / ${p.total ?? '?'}`;
+      $('#progBar').style.width = p.total ? Math.round(p.done / p.total * 100) + '%' : '0%';
+    } else {
+      $('#progDetail').textContent = p.detail || '';
+      $('#progBar').style.width = '0%';
+    }
+    const act = p.active || [];
+    $('#progActiveLabel').style.display = act.length ? '' : 'none';
+    const mb = n => (n / 1048576).toFixed(1);
+    $('#progActive').innerHTML = act.map(a => {
+      const pct = a.total ? Math.min(100, Math.round(a.downloaded / a.total * 100)) : 0;
+      const size = a.total ? `${pct}% · ${mb(a.downloaded)}/${mb(a.total)}MB` : `${mb(a.downloaded)}MB`;
+      return `<div><div class="dl-head"><span>${esc([a.artist, a.title].filter(Boolean).join(' - '))}</span>
+        <span class="muted">${size}</span></div>
+        <div class="bar thin"><i style="width:${pct}%"></i></div></div>`;
+    }).join('');
+    const rc = p.recent || [];
+    $('#progRecentLabel').style.display = rc.length ? '' : 'none';
+    $('#progRecent').innerHTML = rc.slice().reverse().map(i => `
+      <div><span class="tag ${i.ok ? 'ok' : 'bad'}">${i.ok ? '✓' : '✗'}</span>
+        ${esc([i.artist, i.title].filter(Boolean).join(' - '))}
+        ${i.ok ? `<span class="tag lv">${esc(i.level)}</span>`
+               : `<span class="muted">${esc(i.reason || '')}</span>`}</div>`).join('');
+  }
+  $('#plBody').innerHTML = s.playlists.map(p => `
+    <tr>
+      <td><a href="javascript:viewTracks(${p.id},'${esc(p.name)}')">${esc(p.name || p.id)}</a>
+          ${p.configured ? '' : '<span class="tag">已移除</span>'}</td>
+      <td>${p.total}</td>
+      <td><span class="tag ${p.ok ? 'ok' : ''}">${p.ok}</span></td>
+      <td><span class="tag">${p.pending}</span></td>
+      <td><span class="tag ${p.failed ? 'bad' : ''}">${p.failed}</span></td>
+      <td class="muted">${esc(p.last_sync || '-')}</td>
+      <td style="white-space:nowrap">
+        <button class="btn mini" onclick="syncOne(${p.id})">同步</button>
+        <button class="btn mini" onclick="removePl(${p.id})">移除</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="7" class="muted">尚未添加歌单</td></tr>';
+}
+
+async function refreshRuns() {
+  const { runs } = await api('/api/runs?limit=12');
+  const last = runs[0];
+  if (last && last.summary) {
+    const m = last.summary;
+    $('#lastStats').innerHTML = [
+      ['新增', m.added, 'var(--ok)'], ['升级', m.upgraded, '#7aa7e8'],
+      ['失败', m.failed, 'var(--err)'], ['NCM', m.ncm, ''], ['移除', m.removed, ''],
+    ].map(([k, v, c]) =>
+      `<div><div class="stat-num" style="color:${c || 'var(--text)'}">${v ?? 0}</div><div class="muted">${k}</div></div>`).join('');
+  }
+  $('#runBody').innerHTML = runs.map(r => `
+    <tr>
+      <td class="muted">${esc(r.finished)}</td>
+      <td><span class="tag ${r.status === 'ok' ? 'ok' : 'bad'}">${esc(r.status)}</span></td>
+      <td>${r.summary.added ?? 0}</td><td>${r.summary.upgraded ?? 0}</td>
+      <td>${r.summary.failed ?? 0}</td><td>${r.summary.ncm ?? 0}</td>
+    </tr>`).join('');
+}
+
+async function refreshLogs() {
+  const { text } = await api('/api/logs?lines=300');
+  const el = $('#log');
+  el.textContent = text || '(空)';
+  el.scrollTop = el.scrollHeight;
+}
+
+/* ---------- 设置 ---------- */
+const LEVELS = [
+  ['jymaster', '超清母带'], ['hires', 'Hi-Res'], ['lossless', '无损'], ['exhigh', '极高'],
+  ['higher', '较高'], ['standard', '标准'], ['jyeffect', '高清臻音'], ['sky', '沉浸环绕'],
+  ['dolby', '杜比全景声'], ['vivid', '臻音全景声'],
+];
+async function loadSettings() {
+  const s = await api('/api/settings');
+  $('#sSchedule').value = s.schedule; $('#sLayout').value = s.layout; $('#sNaming').value = s.naming;
+  $('#sMirror').value = String(!!s.mirror);
+  $('#sConc').value = s.concurrency; $('#sDelayMin').value = s.delay_min; $('#sDelayMax').value = s.delay_max;
+  $('#sToken').value = s.web_token; $('#sWebPort').value = s.web_port; $('#sWebEnabled').checked = s.web_enabled;
+  $('#sUpgrade').checked = s.upgrade_existing; $('#sLrc').checked = s.lrc; $('#sEmbed').checked = s.embed;
+  $('#sNfo').checked = s.nfo; $('#sNcm').checked = s.ncm_inbox;
+  $('#sNotifyType').value = s.notify_type; $('#sNotifyUrl').value = s.notify_url; $('#sNotifySecret').value = s.notify_secret;
+  $('#sChain').innerHTML = LEVELS.map(([k, label]) =>
+    `<label><input type="checkbox" value="${k}" ${s.chain.includes(k) ? 'checked' : ''}> ${label} <span class="muted">${k}</span></label>`).join('');
+}
+function collectSettings() {
+  return {
+    schedule: $('#sSchedule').value.trim(),
+    layout: $('#sLayout').value,
+    naming: $('#sNaming').value.trim(),
+    mirror: $('#sMirror').value === 'true',
+    chain: LEVELS.map(([k]) => k).filter(k => $(`#sChain input[value=${k}]`).checked),
+    upgrade_existing: $('#sUpgrade').checked,
+    lrc: $('#sLrc').checked, embed: $('#sEmbed').checked, nfo: $('#sNfo').checked, ncm_inbox: $('#sNcm').checked,
+    notify_type: $('#sNotifyType').value, notify_url: $('#sNotifyUrl').value.trim(),
+    notify_secret: $('#sNotifySecret').value.trim(),
+    concurrency: +$('#sConc').value || 3,
+    delay_min: +$('#sDelayMin').value || 1, delay_max: +$('#sDelayMax').value || 3,
+    web_enabled: $('#sWebEnabled').checked, web_port: +$('#sWebPort').value || 8286,
+    web_token: $('#sToken').value.trim(),
+  };
+}
+$('#btnSaveSettings').onclick = async () => {
+  try {
+    await api('/api/settings', {method: 'PUT', body: collectSettings()});
+    alert('设置已保存并生效'); refreshStatus();
+  } catch (e) { alert(e.message); }
+};
+
+/* ---------- 动作 ---------- */
+async function syncOne(id) { await api('/api/sync', {method: 'POST', body: {playlists: [id]}}); refreshStatus(); }
+$('#btnSync').onclick = async () => { try { await api('/api/sync', {method: 'POST', body: {}}); } catch(e){ alert(e.message); } refreshStatus(); };
+$('#btnAdd').onclick = async () => {
+  try {
+    const r = await api('/api/playlists', {method: 'POST', body: {id: $('#plId').value, name: $('#plName').value}});
+    $('#plId').value = ''; $('#plName').value = ''; refreshStatus();
+    if (!r.sync_started) alert('已添加。当前有任务在运行,该歌单将在下一轮(或手动触发时)同步。');
+  } catch (e) { alert(e.message); }
+};
+$('#btnAcc').onclick = async () => {
+  showDialog('<h2 style="margin:0 0 10px">账号歌单</h2><p class="muted" id="accMsg">获取中…</p>'
+    + '<div id="accList" style="max-height:55vh;overflow:auto;margin-top:8px"></div>');
+  try {
+    const d = await api('/api/account/playlists');
+    $('#accMsg').textContent = `共 ${d.playlists.length} 个歌单,点「添加」加入同步(会立即开始下载)`;
+    $('#accList').innerHTML = d.playlists.map(p => `
+      <div class="inline" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 2px">
+        <span>${esc(p.name)} <span class="muted">${p.total} 首</span></span>
+        ${p.configured ? '<span class="tag ok">已添加</span>'
+          : `<button class="btn mini" onclick="addFromAcc(${p.id}, this)">添加</button>`}
+      </div>`).join('');
+  } catch (e) { $('#accMsg').textContent = '获取失败:' + e.message; }
+};
+async function addFromAcc(id, btn) {
+  try {
+    const r = await api('/api/playlists', {method: 'POST', body: {id: String(id)}});
+    btn.outerHTML = '<span class="tag ok">已添加</span>';
+    refreshStatus();
+    if (!r.sync_started) alert('已添加。当前有任务在运行,该歌单将在下一轮同步。');
+  } catch (e) { alert(e.message); }
+}
+async function removePl(id) {
+  if (!confirm('确定从同步列表移除该歌单?(本地文件保留)')) return;
+  await api('/api/playlists/' + id, {method: 'DELETE'}); refreshStatus();
+}
+$('#btnLog').onclick = refreshLogs;
+$('#btnSave').onclick = async () => {
+  try {
+    await api('/api/config', {method: 'PUT', body: {content: $('#cfgText').value}});
+    alert('已保存并生效'); refreshStatus(); loadSettings();
+  } catch (e) { alert(e.message); }
+};
+$('#btnNotify').onclick = async () => {
+  try {  // 先存再测,保证测的是当前填写内容
+    await api('/api/settings', {method: 'PUT', body: collectSettings()});
+    await api('/api/notify/test', {method: 'POST'}); alert('已发送,请到飞书群查看');
+  } catch (e) { alert(e.message); }
+};
+
+/* ---------- 弹窗 ---------- */
+const dlg = $('#dlg');
+function showDialog(html) { $('#dlgBody').innerHTML = html; dlg.showModal(); }
+dlg.addEventListener('close', () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } $('#btnLogin').disabled = false; });
+
+async function viewTracks(id, name) {
+  const { tracks } = await api('/api/tracks/' + id);
+  const rows = tracks.map(t => `
+    <tr><td>${t.pos + 1}</td><td>${esc(t.title)}</td><td class="muted">${esc(t.artist)}</td>
+    <td><span class="tag ${t.status === 'ok' ? 'ok' : (t.status === 'new' ? '' : 'bad')}">${esc(t.status === 'new' ? '等待' : t.status)}</span></td>
+    <td><span class="tag lv">${esc(t.level)}</span></td></tr>`).join('');
+  showDialog(`<h2 style="margin:0 0 10px">${esc(name)} · ${tracks.length} 首</h2>
+    <div style="max-height:60vh;overflow:auto"><table><thead><tr><th>#</th><th>标题</th><th>歌手</th><th>状态</th><th>音质</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+}
+
+/* ---------- 扫码登录 ---------- */
+async function startQr() {
+  let d;
+  try { d = await api('/api/login/qr', {method: 'POST'}); }
+  catch (e) { $('#btnLogin').disabled = false; return alert('生成二维码失败:' + e.message); }
+  if (pollTimer) clearInterval(pollTimer);
+  showDialog(`<h2 style="margin:0 0 6px">扫码登录</h2>
+    <p class="muted">打开手机网易云音乐 App 扫一扫,并在手机上确认登录。二维码过期可点「重新生成」。</p>
+    <img id="qrimg" src="${d.img}" alt="二维码">
+    <p style="text-align:center;margin:4px 0" id="qrMsg">等待扫码…</p>
+    <div style="text-align:center"><button class="btn mini" id="btnReQr">重新生成</button></div>`);
+  $('#btnReQr').onclick = startQr;
+  pollTimer = setInterval(async () => {
+    let r;
+    try { r = await api('/api/login/qr/poll/' + d.key); }
+    catch { stopQr(); $('#qrMsg').textContent = '轮询出错,请重试'; return; }
+    $('#qrMsg').textContent = r.message;
+    if (r.saved) {
+      stopQr();
+      $('#qrMsg').innerHTML = '<span style="color:var(--ok)">✅ 登录成功,凭证已保存</span>';
+      setTimeout(() => { dlg.close(); refreshStatus(); }, 900);
+    } else if (r.code === 800 || r.code === 803) {
+      stopQr();  // 过期,或确认了但没拿到凭证 → 都停在明确提示上
+    }
+  }, 2000);
+}
+function stopQr() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+$('#btnLogin').onclick = () => { $('#btnLogin').disabled = true; startQr(); };
+
+/* ---------- 初始化 ---------- */
+async function init() {
+  await Promise.all([refreshStatus(), refreshRuns(), refreshLogs(), loadSettings()]);
+  const { content } = await api('/api/config');
+  $('#cfgText').value = content;
+  setInterval(refreshStatus, 2000);
+  setInterval(refreshRuns, 15000);
+  setInterval(refreshLogs, 10000);
+}
+init().catch(e => console.error(e));
+</script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+[
+  {
+    "stepTitle": "基础配置",
+    "items": [
+      {
+        "type": "text",
+        "field": "wyydl_port",
+        "label": "Web 面板端口",
+        "initValue": "8286",
+        "rules": [
+          { "required": true, "message": "请输入端口" },
+          { "pattern": "^[0-9]+$", "message": "端口必须为数字" }
+        ]
+      },
+      {
+        "type": "radio",
+        "field": "wyydl_music_mode",
+        "label": "音乐保存位置",
+        "initValue": "share",
+        "options": [
+          { "label": "应用共享目录(推荐,文件管理器中为 wyydl/music)", "value": "share" },
+          { "label": "自定义已有目录(如 /vol1/1000/media/music)", "value": "custom" }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wyydl_music_dir",
+        "label": "自定义音乐目录(绝对路径,选择「自定义」时填写;不存在会自动创建)",
+        "initValue": "",
+        "rules": [
+          { "pattern": "^/.*", "message": "必须是以 / 开头的绝对路径" }
+        ]
+      },
+      {
+        "type": "tips",
+        "helpText": "保存后自动重建容器使新配置生效;已下载的音乐不会移动,如更改目录请手动迁移旧文件。"
+      }
+    ]
+  }
+]

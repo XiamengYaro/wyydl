@@ -1,0 +1,34 @@
+#!/bin/bash
+# 应用生命周期:启动/停止由 appcenter 对 docker-project 自动执行,这里只做状态检查与兜底拉起
+
+COMPOSE_FILE="${TRIM_APPDEST}/docker/docker-compose.yaml"
+MAIN_CONTAINER="wyydl-sync"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+is_running () {
+    docker inspect "$MAIN_CONTAINER" 2>/dev/null | grep -q '"Status": "running",'
+}
+
+case $1 in
+start)
+    # appcenter 会拉起 compose;若容器缺失(如异常重启)则先还原配置再兜底拉起
+    if ! is_running; then
+        # shellcheck disable=SC1091
+        [ -f "$SCRIPT_DIR/common.sh" ] && . "$SCRIPT_DIR/common.sh" && wyydl_apply_settings >/dev/null 2>&1 || true
+        docker compose -f "$COMPOSE_FILE" up -d >/dev/null 2>&1 || true
+    fi
+    exit 0
+    ;;
+stop)
+    exit 0
+    ;;
+status)
+    if is_running; then
+        exit 0
+    fi
+    exit 3
+    ;;
+*)
+    exit 1
+    ;;
+esac

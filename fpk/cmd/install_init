@@ -1,0 +1,8 @@
+#!/bin/bash
+# 安装前检查
+
+if ! command -v docker >/dev/null 2>&1; then
+    echo "未检测到 Docker,请先在应用中心安装 Docker 应用"
+    exit 1
+fi
+exit 0

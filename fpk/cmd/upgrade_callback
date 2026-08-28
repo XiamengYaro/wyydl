@@ -1,0 +1,14 @@
+#!/bin/bash
+# 升级后:渲染持久化配置,并强制重建镜像使新代码生效
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/common.sh"
+
+wyydl_apply_settings || exit 1
+
+if ! docker compose -f "${TRIM_APPDEST}/docker/docker-compose.yaml" build; then
+    [ -n "$TRIM_TEMP_LOGFILE" ] && echo "镜像构建失败:请确认设备可访问 pypi 与 git.taurusxin.com 后重试升级" > "$TRIM_TEMP_LOGFILE"
+    exit 1
+fi
+exit 0
