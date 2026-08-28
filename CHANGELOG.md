@@ -12,6 +12,11 @@
 
 同步位置:`fpk/manifest` 的 `version` 与 `sync/wyydl/__init__.py` 的 `__version__` 必须一致,并在本文件追加条目、更新 `fpk/manifest` 的 `changelog`。
 
+## 1.3.0 - 2026-08-28
+
+- **移除 NCM 转换功能**及其全部相关组件:`ncm.py` 模块、`ncmdump-go` 二进制下载(Dockerfile 大幅简化,构建不再依赖 git.taurusxin.com)、`_ncm_inbox` 处理、面板开关与 NCM 统计列。保留 `ncm-api` API 服务容器。
+- 如需 NCM 转换,请使用独立工具(如 [ncmdump-go](https://git.taurusxin.com/taurusxin/ncmdump-go))在库外完成后将音频放入音乐目录。
+
 ## 1.2.2 - 2026-08-28
 
 - README 声明:本项目为**纯 AI Vibe Coding 生成**,全部代码与文档由 AI 编写,人类负责需求与验收。仓库描述同步更新。

@@ -1,6 +1,6 @@
 # wyydl · 网易云歌单定时同步(fnOS NAS)
 
-定时把指定网易云歌单以**当前账号可用的最高音质**同步到 NAS 音乐目录:自动协商音质(jymaster/hires/lossless…逐级降档)、下载校验(MD5)、写入完整标签(封面/歌词)、生成 NFO、按「歌手/专辑」归档并生成每个歌单的 `.m3u8`。自带 Web 控制面板与飞书 webhook 通知,并内置 [ncmdump-go](https://git.taurusxin.com/taurusxin/ncmdump-go) 兜底转换 `.ncm` 文件。
+定时把指定网易云歌单以**当前账号可用的最高音质**同步到 NAS 音乐目录:自动协商音质(jymaster/hires/lossless…逐级降档)、下载校验(MD5)、写入完整标签(封面/歌词)、生成 NFO、按「歌手/专辑」归档并生成每个歌单的 `.m3u8`。自带 Web 控制面板与飞书 webhook 通知。
 
 API 服务:[NeteaseCloudMusicApiEnhanced/api-enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced)(Docker 镜像 `moefurina/ncm-api`)。
 
@@ -23,7 +23,7 @@ API 服务:[NeteaseCloudMusicApiEnhanced/api-enhanced](https://github.com/Neteas
 ```
 docker-compose.yml        # 部署入口(在 NAS 上放到 /vol1/appdata/wyydl/)
 sync/                     # 同步程序(Python)
-├── Dockerfile            # 内含 ncmdump-go 二进制(x86_64/arm64 自适应)
+├── Dockerfile            # 同步容器镜像(x86_64/arm64 自适应)
 └── wyydl/
     ├── main.py           # 入口:守护(Web+调度)/ --once
     ├── syncer.py         # 同步引擎
@@ -31,7 +31,6 @@ sync/                     # 同步程序(Python)
     ├── quality.py        # 音质协商
     ├── downloader.py     # 下载与 MD5 校验
     ├── tagger.py         # mutagen 标签/封面/歌词
-    ├── ncm.py            # ncmdump-go 调用
     ├── state.py          # SQLite 状态库
     ├── notify.py         # 飞书 webhook
     ├── qrlogin.py        # CLI 扫码登录
@@ -70,7 +69,6 @@ docker exec wyydl-sync python -m wyydl.main --once --playlist 24381616
 ├── 03. 晴天.nfo                     # 单曲元数据;专辑/歌手目录另有 album.nfo、artist.nfo
 ├── .lrc 歌词与内嵌封面随文件生成
 ├── 我的喜欢的音乐.m3u8              # 每个歌单一个播放列表
-├── _ncm_inbox/                      # 丢入 .ncm 自动转换入库(官方客户端下载兜底)
 └── _trash/                          # mirror 开启时被移除歌曲的暂存
 ```
 
@@ -96,4 +94,3 @@ web: {enabled: true, port: 8286, token: ""}   # token 建议在局域网不可�
 - **NFO**:下载完成后自动写单曲 `<歌名>.nfo`(标题/歌手/专辑/音轨号/时长/流派/网易云 ID);归档布局下还会在专辑、歌手目录写 `album.nfo` 与 `artist.nfo`(流派/厂牌/发行日期/简介/曲目列表,来自 `/album` 接口,按专辑缓存请求)。
 - **删除**:默认只从 m3u8 移除不删文件;`mirror: true` 时移入 `_trash`。
 - **风控**:全部请求经自建 ncm-api,带 1–3s 随机间隔;不自动化登录;`MUSIC_U` 过期时飞书通知提醒重扫。
-- **NCM 兜底**:把 PC 客户端下载目录指向 SMB 共享的 `_ncm_inbox`,每轮同步前自动 `ncmdump-go` 解密入库。

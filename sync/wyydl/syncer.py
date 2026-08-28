@@ -1,4 +1,4 @@
-"""核心同步引擎:歌单拉取 → NCM 兜底入库 → 音质协商 → 下载打标 → m3u8/清理 → 通知。"""
+"""核心同步引擎:歌单拉取 → 音质协商 → 下载打标 → m3u8/清理 → 通知。"""
 from __future__ import annotations
 
 import datetime as _dt
@@ -9,7 +9,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from . import downloader, ncm as ncmmod, nfo, notify, quality, tagger
+from . import downloader, nfo, notify, quality, tagger
 from .api import ApiError, LoginExpired, NcmApi
 from .config import DB_DIR, MUSIC_DIR, Config
 from .state import State
@@ -65,7 +65,7 @@ class SyncEngine:
         started = now_str()
         summary: dict = {
             "trigger": trigger, "status": "ok", "playlists": [], "levels": {},
-            "added": 0, "upgraded": 0, "failed": 0, "removed": 0, "ncm": 0,
+            "added": 0, "upgraded": 0, "failed": 0, "removed": 0,
             "failures": [], "started": started,
         }
         try:
@@ -83,7 +83,7 @@ class SyncEngine:
             summary["finished"] = now_str()
             self.state.record_run(started, summary["finished"], summary["status"], summary)
             if (summary["added"] or summary["upgraded"] or summary["failed"]
-                    or summary["removed"] or summary["ncm"] or summary["status"] != "ok"):
+                    or summary["removed"] or summary["status"] != "ok"):
                 notify.notify(self.cfg.d, notify.run_summary_text(summary))
         return summary
 
@@ -136,13 +136,7 @@ class SyncEngine:
                                    album=str((d.get("al") or {}).get("name") or "未知专辑"),
                                    track_no=int(d.get("no") or 0))
 
-        # 3) NCM 投放目录兜底入库
-        if cfg.d.get("ncm_inbox", True):
-            self._set_progress("NCM 转换", "")
-            summary["ncm"] = self._process_inbox()
-            self._set_progress("准备下载", "")
-
-        # 4) 计划下载
+        # 3) 计划下载
         chain = cfg.quality_chain
         upgrade_on = bool(cfg.d["quality"].get("upgrade_existing", True))
         tasks: list[tuple[int, str, str]] = []  # (sid, level, kind)
@@ -162,8 +156,7 @@ class SyncEngine:
         if tasks:
             self._download_all(tasks, details, summary)
 
-        # 5) 导出 m3u8 与删除处理
-        self._set_progress("整理输出", "")
+        # 5) 导出 m3u8 与删除处理        self._set_progress("整理输出", "")
         self._export_m3u8()
         summary["removed"] = self._cleanup_missing(desired, prev_members)
 
@@ -411,62 +404,6 @@ class SyncEngine:
                 data = None
         self._cover_cache[aid] = data
         return data
-
-    # ---------- NCM 兜底 ----------
-    def _process_inbox(self) -> int:
-        inbox = MUSIC_DIR / "_ncm_inbox"
-        out = DB_DIR / "ncm_out"
-        done = MUSIC_DIR / "_inbox_done"
-        files = sorted(inbox.glob("*.ncm"))
-        if not files:
-            return 0
-        count = 0
-        known = {(s["title"].casefold(), s["artist"].split(" / ")[0].casefold()): s["sid"]
-                 for s in self.state.all_songs() if s["title"]}
-        for f in files:
-            self._set_progress("NCM 转换", f.name)
-            conv = ncmmod.convert_one(f, out)
-            if conv is None:
-                continue
-            meta = self._tags_from_file(conv)
-            rel = tagger.song_relative_path({**meta, "pos": 0}, self.cfg.layout, self.cfg.naming)
-            final = MUSIC_DIR / f"{rel}{conv.suffix.lower()}"
-            i = 2
-            while final.exists():
-                final = MUSIC_DIR / f"{rel} ({i}){conv.suffix.lower()}"
-                i += 1
-            downloader.move_into(conv, final)
-            key = (meta["title"].casefold(), meta["artist"].split(" / ")[0].casefold())
-            sid = known.get(key) or ncmmod.ncm_sid(f)
-            self.state.upsert_song(
-                sid=sid, title=meta["title"], artist=meta["artist"], album=meta["album"],
-                file_path=str(final), ext=final.suffix.lstrip("."), level="ncm",
-                downloaded_at=now_str(), status="ok",
-            )
-            ncmmod.move_done(f, done)
-            count += 1
-            log.info("[ncm] %s -> %s", f.name, final.name)
-        return count
-
-    @staticmethod
-    def _tags_from_file(path: Path) -> dict:
-        from mutagen import File as MutaFile
-        meta = {"title": path.stem, "artist": "未知歌手", "album": "未知专辑", "track": 0}
-        try:
-            mf = MutaFile(str(path), easy=True)
-            if mf is None:
-                return meta
-            def first(k, d=""):
-                v = (mf.get(k) or [d])[0]
-                return str(v) if v is not None else d
-            meta["title"] = first("title", path.stem)
-            meta["artist"] = first("artist", "未知歌手")
-            meta["album"] = first("album", "未知专辑")
-            tn = first("tracknumber", "0").split("/")[0]
-            meta["track"] = int(tn) if tn.isdigit() else 0
-        except Exception:
-            pass
-        return meta
 
     # ---------- 输出整理 ----------
     def _export_m3u8(self) -> None:

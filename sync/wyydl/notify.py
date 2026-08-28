@@ -61,8 +61,7 @@ def run_summary_text(summary: dict) -> str:
         lines.append("歌单: " + ", ".join(f"{p['name']}({p['total']})" for p in pls))
     lines.append(
         f"新增 {summary.get('added', 0)} / 升级 {summary.get('upgraded', 0)}"
-        f" / 失败 {summary.get('failed', 0)} / NCM入库 {summary.get('ncm', 0)}"
-        f" / 移除 {summary.get('removed', 0)}"
+        f" / 失败 {summary.get('failed', 0)} / 移除 {summary.get('removed', 0)}"
     )
     levels = summary.get("levels") or {}
     if levels:

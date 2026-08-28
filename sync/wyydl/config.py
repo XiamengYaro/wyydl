@@ -27,7 +27,6 @@ DEFAULTS: dict = {
     "lyrics": {"lrc": True, "embed": True},
     "nfo": True,                      # 生成 album.nfo / artist.nfo(Jellyfin/Emby/Kodi)
     "mirror": False,                  # playlist 布局下,歌单移除的歌曲是否移入 _trash
-    "ncm_inbox": True,                # 处理 /music/_ncm_inbox 下的 .ncm 文件
     "notify": {"type": "feishu", "url": "", "secret": ""},
     "web": {"enabled": True, "port": 8286, "token": ""},
     "limits": {"download_concurrency": 3, "api_delay": [1.0, 3.0]},

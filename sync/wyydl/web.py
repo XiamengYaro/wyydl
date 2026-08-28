@@ -79,7 +79,6 @@ def create_app(ctx: AppContext) -> FastAPI:
             "playlists": pls,
             "layout": ctx.cfg.layout,
             "schedule": ctx.cfg.schedule,
-            "ncm_inbox": bool(ctx.cfg.d.get("ncm_inbox", True)),
         }
 
     @app.post("/api/sync", dependencies=[Depends(guard)])
@@ -194,7 +193,7 @@ def create_app(ctx: AppContext) -> FastAPI:
             "upgrade_existing": d["quality"].get("upgrade_existing", True),
             "lrc": d["lyrics"].get("lrc", True), "embed": d["lyrics"].get("embed", True),
             "nfo": d.get("nfo", True),
-            "mirror": d.get("mirror", False), "ncm_inbox": d.get("ncm_inbox", True),
+            "mirror": d.get("mirror", False),
             "notify_type": nf.get("type") or "feishu", "notify_url": nf.get("url") or "",
             "notify_secret": nf.get("secret") or "",
             "web_enabled": web.get("enabled", True), "web_port": web.get("port") or 8286,
@@ -228,7 +227,7 @@ def create_app(ctx: AppContext) -> FastAPI:
             "quality": {"chain": chain, "upgrade_existing": bool(payload.get("upgrade_existing"))},
             "lyrics": {"lrc": bool(payload.get("lrc")), "embed": bool(payload.get("embed"))},
             "nfo": bool(payload.get("nfo")),
-            "mirror": bool(payload.get("mirror")), "ncm_inbox": bool(payload.get("ncm_inbox")),
+            "mirror": bool(payload.get("mirror")),
             "notify": {
                 "type": "feishu" if payload.get("notify_type") == "feishu" else "webhook",
                 "url": str(payload.get("notify_url") or "").strip(),

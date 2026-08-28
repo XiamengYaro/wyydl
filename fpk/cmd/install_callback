@@ -10,6 +10,6 @@ mkdir -p "${TRIM_PKGVAR}/config" "${TRIM_PKGVAR}/db" "${TRIM_PKGVAR}/logs"
 wyydl_apply_settings || exit 1
 
 if ! docker compose -f "${TRIM_APPDEST}/docker/docker-compose.yaml" build >/dev/null 2>&1; then
-    echo "提示:镜像预构建未完成,首次启动时将自动构建(需可访问 pypi 与 git.taurusxin.com)"
+    echo "提示:镜像预构建未完成,首次启动时将自动构建(需可访问 pypi)"
 fi
 exit 0

@@ -66,7 +66,7 @@ cd fpk && ./build.sh
 1. 把 `wyydl.fpk` 上传到 fnOS 设备;
 2. 通过应用中心的**手动/本地安装入口**安装,或使用 [appcenter-cli](https://developer.fnnas.com/docs/cli/appcentercli/)(需管理员权限);
 3. 安装前确保应用中心已安装 **Docker** 应用(`install_init` 会检查);
-4. 安装后启动应用——appcenter 自动执行 `docker compose up`,**首次启动会构建镜像**,需设备可访问 pypi 与 git.taurusxin.com,耗时几分钟属正常。
+4. 安装后启动应用——appcenter 自动执行 `docker compose up`,**首次启动会构建镜像**,需设备可访问 pypi,耗时几分钟属正常。
 
 ## 安装后的东西在哪
 

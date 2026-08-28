@@ -122,7 +122,7 @@
     <section class="card">
       <h2>最近运行</h2>
       <div class="stats" id="lastStats" style="margin-bottom:10px"></div>
-      <table><thead><tr><th>时间</th><th>状态</th><th>新增</th><th>升级</th><th>失败</th><th>NCM</th></tr></thead>
+      <table><thead><tr><th>时间</th><th>状态</th><th>新增</th><th>升级</th><th>失败</th></tr></thead>
       <tbody id="runBody"></tbody></table>
     </section>
     <section class="card">
@@ -167,12 +167,11 @@
       <label><input type="checkbox" id="sUpgrade"> 发现更高音质时自动重新下载</label>
     </div>
 
-    <div class="sect">歌词、NFO 与 NCM 兜底</div>
+    <div class="sect">歌词与 NFO</div>
     <div class="ckrow">
       <label><input type="checkbox" id="sLrc"> 生成同名 .lrc 歌词文件</label>
       <label><input type="checkbox" id="sEmbed"> 歌词嵌入音频标签</label>
       <label><input type="checkbox" id="sNfo"> 生成 NFO 元数据(album.nfo / artist.nfo,Jellyfin/Emby)</label>
-      <label><input type="checkbox" id="sNcm"> 处理 _ncm_inbox 内的 .ncm 文件</label>
     </div>
 
     <div class="sect">通知</div>
@@ -310,7 +309,7 @@ async function refreshRuns() {
     const m = last.summary;
     $('#lastStats').innerHTML = [
       ['新增', m.added, 'var(--ok)'], ['升级', m.upgraded, '#7aa7e8'],
-      ['失败', m.failed, 'var(--err)'], ['NCM', m.ncm, ''], ['移除', m.removed, ''],
+      ['失败', m.failed, 'var(--err)'], ['移除', m.removed, ''],
     ].map(([k, v, c]) =>
       `<div><div class="stat-num" style="color:${c || 'var(--text)'}">${v ?? 0}</div><div class="muted">${k}</div></div>`).join('');
   }
@@ -319,7 +318,7 @@ async function refreshRuns() {
       <td class="muted">${esc(r.finished)}</td>
       <td><span class="tag ${r.status === 'ok' ? 'ok' : 'bad'}">${esc(r.status)}</span></td>
       <td>${r.summary.added ?? 0}</td><td>${r.summary.upgraded ?? 0}</td>
-      <td>${r.summary.failed ?? 0}</td><td>${r.summary.ncm ?? 0}</td>
+      <td>${r.summary.failed ?? 0}</td>
     </tr>`).join('');
 }
 
@@ -343,7 +342,7 @@ async function loadSettings() {
   $('#sConc').value = s.concurrency; $('#sDelayMin').value = s.delay_min; $('#sDelayMax').value = s.delay_max;
   $('#sToken').value = s.web_token; $('#sWebPort').value = s.web_port; $('#sWebEnabled').checked = s.web_enabled;
   $('#sUpgrade').checked = s.upgrade_existing; $('#sLrc').checked = s.lrc; $('#sEmbed').checked = s.embed;
-  $('#sNfo').checked = s.nfo; $('#sNcm').checked = s.ncm_inbox;
+  $('#sNfo').checked = s.nfo;
   $('#sNotifyType').value = s.notify_type; $('#sNotifyUrl').value = s.notify_url; $('#sNotifySecret').value = s.notify_secret;
   $('#sChain').innerHTML = LEVELS.map(([k, label]) =>
     `<label><input type="checkbox" value="${k}" ${s.chain.includes(k) ? 'checked' : ''}> ${label} <span class="muted">${k}</span></label>`).join('');
@@ -356,7 +355,7 @@ function collectSettings() {
     mirror: $('#sMirror').value === 'true',
     chain: LEVELS.map(([k]) => k).filter(k => $(`#sChain input[value=${k}]`).checked),
     upgrade_existing: $('#sUpgrade').checked,
-    lrc: $('#sLrc').checked, embed: $('#sEmbed').checked, nfo: $('#sNfo').checked, ncm_inbox: $('#sNcm').checked,
+    lrc: $('#sLrc').checked, embed: $('#sEmbed').checked, nfo: $('#sNfo').checked,
     notify_type: $('#sNotifyType').value, notify_url: $('#sNotifyUrl').value.trim(),
     notify_secret: $('#sNotifySecret').value.trim(),
     concurrency: +$('#sConc').value || 3,

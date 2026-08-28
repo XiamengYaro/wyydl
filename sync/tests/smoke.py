@@ -174,7 +174,7 @@ bad = client.put("/api/settings", json={"schedule": "0 4 * * *", "chain": []})
 ok("空音质链被拒", bad.status_code == 400)
 good = client.put("/api/settings", json={
     "schedule": "30 5 * * *", "layout": "archive", "chain": ["hires", "lossless"],
-    "upgrade_existing": True, "lrc": True, "embed": False, "mirror": False, "ncm_inbox": True,
+    "upgrade_existing": True, "lrc": True, "embed": False, "mirror": False,
     "nfo": True,
     "notify_type": "feishu", "notify_url": "https://example.com/hook", "notify_secret": "",
     "web_enabled": True, "web_port": 8286, "web_token": "t1",
