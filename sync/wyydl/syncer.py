@@ -9,6 +9,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+import httpx
+
 from . import downloader, nfo, notify, quality, tagger
 from .api import ApiError, LoginExpired, NcmApi
 from .config import DB_DIR, MUSIC_DIR, Config
@@ -210,32 +212,21 @@ class SyncEngine:
 
     # ---------- 下载 ----------
     def _download_all(self, tasks, details: dict[int, dict], summary: dict) -> None:
-        """取流与下载交错:每取到一批流地址立刻提交下载,不整体阻塞。"""
+        """并发下载。流地址在任务内即时获取(取到立刻用),
+        避免预取排队导致 CDN 签名链接过期(403)。"""
         kind_of = {sid: kind for sid, _, kind in tasks}
         total = len(tasks)
-        urlmap: dict[int, dict] = {}
-        by_level: dict[str, list[int]] = {}
-        for sid, lvl, _ in tasks:
-            by_level.setdefault(lvl, []).append(sid)
 
         conc = max(1, int(self.cfg.d["limits"].get("download_concurrency") or 3))
         self.recent = []
         self.active = {}
         done = 0
-        futs: list = []
         pool = ThreadPoolExecutor(max_workers=conc)
         try:
-            for lvl, sids in by_level.items():
-                for i in range(0, len(sids), 5):
-                    chunk = sids[i:i + 5]
-                    self._set_progress("下载", f"取流 {lvl}…", done=done, total=total)
-                    try:
-                        urlmap.update(self.api.song_url_batch(chunk, lvl))
-                    except ApiError as e:
-                        log.warning("批量取流失败(level=%s):%s", lvl, e)
-                    for sid in chunk:
-                        futs.append(pool.submit(self._download_one, sid, lvl, kind_of[sid],
-                                                details.get(sid) or {}, urlmap.get(sid)))
+            futs = [
+                pool.submit(self._download_one, sid, lvl, kind_of[sid], details.get(sid) or {})
+                for sid, lvl, kind in tasks
+            ]
             for fut in as_completed(futs):
                 done += 1
                 try:
@@ -270,8 +261,7 @@ class SyncEngine:
             if total:
                 a["total"] = total
 
-    def _download_one(self, sid: int, want_level: str, kind: str,
-                      detail: dict, pre: dict | None) -> dict:
+    def _download_one(self, sid: int, want_level: str, kind: str, detail: dict) -> dict:
         members = self._membership([sid])
         meta = self._build_meta(sid, detail, members.get(sid, ("未命名歌单", 0)))
         info = self._album_info(detail)
@@ -279,31 +269,46 @@ class SyncEngine:
         meta["label"] = str(info.get("company") or "")
         fail = lambda reason: {"ok": False, "title": meta["title"], "artist": meta["artist"], "reason": reason}  # noqa: E731
 
-        # 取流:预取结果不可用(试听/空链)时逐档降档重试
-        entry = pre if (pre and pre.get("url") and not pre.get("freeTrialInfo")) else None
-        if entry is None:
-            for lvl in quality.chain_from(want_level, self.cfg.quality_chain):
-                try:
-                    e = self.api.song_url(sid, lvl)
-                except ApiError:
-                    continue
-                if e.get("url") and not e.get("freeTrialInfo"):
-                    entry = e
-                    break
+        # 取流:按音质协商结果逐档降档;即时取即时用,避免 CDN 签名链接排队过期(403)
+        entry = None
+        for lvl in quality.chain_from(want_level, self.cfg.quality_chain):
+            try:
+                e = self.api.song_url(sid, lvl)
+            except ApiError:
+                continue
+            if e.get("url") and not e.get("freeTrialInfo"):
+                entry = e
+                break
         if not entry:
             return fail("无可用音源(试听或下架)")
 
-        self.active[sid] = {"title": meta["title"], "artist": meta["artist"],
-                            "downloaded": 0, "total": int(entry.get("size") or 0)}
-        try:
+        # 下载;403/410 视为签名链接过期或失效,自动重取一次新链接重试
+        for attempt in (1, 2):
+            self.active[sid] = {"title": meta["title"], "artist": meta["artist"],
+                                "downloaded": 0, "total": int(entry.get("size") or 0)}
             try:
-                tmp, md5hex, size = downloader.download(
-                    entry["url"], self.tmp_dir,
-                    progress=lambda dn, dt: self._dl_tick(sid, dn, dt))
-            finally:
-                self.active.pop(sid, None)
-        except Exception as e:
-            return fail(f"下载失败:{e.__class__.__name__}")
+                try:
+                    tmp, md5hex, size = downloader.download(
+                        entry["url"], self.tmp_dir,
+                        progress=lambda dn, dt: self._dl_tick(sid, dn, dt))
+                    break
+                finally:
+                    self.active.pop(sid, None)
+            except httpx.HTTPStatusError as e:
+                code = e.response.status_code if e.response is not None else 0
+                if attempt == 1 and code in (403, 410):
+                    try:
+                        e2 = self.api.song_url(sid, str(entry.get("level") or want_level))
+                    except ApiError:
+                        return fail(f"下载失败:HTTP {code}")
+                    if e2.get("url") and not e2.get("freeTrialInfo"):
+                        entry = e2
+                        continue
+                return fail(f"下载失败:HTTP {code}" if code else f"下载失败:{e.__class__.__name__}")
+            except Exception as e:
+                return fail(f"下载失败:{e.__class__.__name__}")
+        else:  # 两次尝试均未成功落盘
+            return fail("下载失败:重试后仍失败")
         if not downloader.verify(tmp, str(entry.get("md5") or ""), int(entry.get("size") or 0)):
             tmp.unlink(missing_ok=True)
             return fail("校验失败(MD5/大小不符)")

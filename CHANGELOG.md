@@ -12,6 +12,11 @@
 
 同步位置:`fpk/manifest` 的 `version` 与 `sync/wyydl/__init__.py` 的 `__version__` 必须一致,并在本文件追加条目、更新 `fpk/manifest` 的 `changelog`。
 
+## 1.9.1 - 2026-08-29
+
+- **修复下载中出现的 CDN 403**:网易 CDN 取流链接是带时效签名的(约数分钟有效),此前批量预取会让链接在排队中过期,下载时报 403 Forbidden。现改为**流地址在下载任务内即时获取**(取到立刻用),并对 403/410 **自动重取一次新链接重试**。
+- 下载请求附带浏览器 UA 与 `Referer: https://music.163.com/`,降低 CDN 拒绝率。
+
 ## 1.9.0 - 2026-08-28
 
 - **歌曲信息全量写入音乐文件**:标签新增流派(GENRE/TCON/©gen)、厂牌(PUBLISHER/TPUB)、网易云歌曲 ID(FLAC `NETEASE_ID` / MP3 `TXXX:NETEASE_SONG_ID` / M4A freeform),来源 `/album` 接口按专辑缓存。

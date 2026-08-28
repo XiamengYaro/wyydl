@@ -18,7 +18,9 @@ def download(url: str, tmp_dir: Path, timeout: tuple[float, float] = (20.0, 900.
     h = hashlib.md5()
     size = 0
     try:
-        with httpx.stream("GET", url, timeout=timeout, follow_redirects=True) as r:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                   "Referer": "https://music.163.com/"}
+        with httpx.stream("GET", url, timeout=timeout, headers=headers, follow_redirects=True) as r:
             r.raise_for_status()
             total = int(r.headers.get("content-length") or 0)
             with open(tmp, "wb") as f:
