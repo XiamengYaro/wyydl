@@ -286,10 +286,10 @@ def create_app(ctx: AppContext) -> FastAPI:
         notify.notify(ctx.cfg.d, "【wyydl】测试通知:通道配置成功")
         return {"sent": True}
 
-    # ---------- 本地信息缺失识别与手动匹配 ----------
-    @app.get("/api/local/missing", dependencies=[Depends(guard)])
-    def local_missing() -> dict:
-        return {"files": ctx.engine.local_missing()}
+    # ---------- 本地音乐列表 / 刮削 / 编辑 ----------
+    @app.get("/api/local/files", dependencies=[Depends(guard)])
+    def local_files() -> dict:
+        return {"files": ctx.engine.local_files()}
 
     @app.get("/api/search", dependencies=[Depends(guard)])
     def search_songs(keywords: str = "", limit: int = 15) -> dict:
@@ -313,6 +313,20 @@ def create_app(ctx: AppContext) -> FastAPI:
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"匹配失败:{e}")
 
+    @app.post("/api/local/refetch", dependencies=[Depends(guard)])
+    async def refetch_local(body: PathBody) -> dict:
+        try:
+            return ctx.engine.refetch_local(body.path)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"刮削失败:{e}")
+
+    @app.put("/api/local/edit", dependencies=[Depends(guard)])
+    async def edit_local(body: EditBody) -> dict:
+        try:
+            return ctx.engine.edit_local(body.path, body.title, body.artist, body.album, body.track)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"保存失败:{e}")
+
     return app
 
 
@@ -323,3 +337,15 @@ class SyncBody(BaseModel):
 class MatchBody(BaseModel):
     sid: int
     path: str
+
+
+class PathBody(BaseModel):
+    path: str
+
+
+class EditBody(BaseModel):
+    path: str
+    title: str
+    artist: str = ""
+    album: str = ""
+    track: int = 0

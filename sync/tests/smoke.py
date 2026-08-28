@@ -176,15 +176,30 @@ _eng2 = SyncEngine(config.Config.load(), st, _mock_api([
     {"album": {"name": "专辑X", "genre": ["Pop"], "company": "厂牌",
                "publishTime": 1072800000000, "description": ""}},
 ]))
-ok("扫描到缺失文件", any(x["name"] == "手动测试.flac" for x in _eng2.local_missing()))
+_lf = _eng2.local_files()
+ok("本地列表含未入库文件", any(x["name"] == "手动测试.flac" and not x["in_db"] and x["missing"] for x in _lf))
 _r = _eng2.match_local_file(7, str(_mflac))
 ok("手动匹配补全", _r["ok"] and _r["title"] == "测试歌" and _r["artist"] == "歌手A / 歌手B")
 # 合成文件无真实音频帧,mutagen 拒绝写标签属预期;验证「部分未成功」被如实上报
 ok("合成文件标签失败被上报", any("标签写入失败" in w for w in (_r.get("warns") or [])))
 ok("匹配后生成 NFO", (_mflac.parent / "手动测试.nfo").exists()
    and (_mflac.parent / "album.nfo").exists())
-ok("匹配后入库", st.song(7)["status"] == "ok" and st.song(7)["file_path"] == str(_mflac))
-ok("匹配后不再缺失", not any(x["path"] == str(_mflac) for x in _eng2.local_missing()))
+ok("匹配后不再缺失", not any(x["path"] == str(_mflac) and x["missing"] for x in _eng2.local_files()))
+
+_eng3 = SyncEngine(config.Config.load(), st, _mock_api([
+    {"songs": [{"id": 7, "name": "测试歌",
+                "ar": [{"id": 1, "name": "歌手A"}],
+                "al": {"id": 5, "name": "专辑X", "picUrl": ""}, "no": 3,
+                "publishTime": 1072800000000, "dt": 250000}]},
+    {"lrc": {"lyric": "[00:00]测试歌词"}},
+    {"album": {"name": "专辑X", "genre": ["Pop"], "company": "厂牌",
+               "publishTime": 1072800000000, "description": ""}},
+]))
+_r3 = _eng3.refetch_local(str(_mflac))
+ok("重新刮削", _r3["ok"] and _r3["title"] == "测试歌")
+_r4 = _eng3.edit_local(str(_mflac), "改标题", "改歌手", "改专辑", 5)
+ok("手动修改信息", _r4["ok"] and st.song(7)["title"] == "改标题" and st.song(7)["artist"] == "改歌手")
+ok("手动修改后不再缺失", not any(x["path"] == str(_mflac) and x["missing"] for x in _eng3.local_files()))
 _a = _mock_api([{"result": {"songs": [{"id": 9, "name": "搜索曲", "ar": [{"name": "甲"}],
                                        "al": {"name": "辑"}, "dt": 180000}]}}])
 ok("搜索接口", _a.search("关键词")[0]["name"] == "搜索曲")

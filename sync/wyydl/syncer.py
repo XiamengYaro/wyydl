@@ -422,21 +422,52 @@ class SyncEngine:
         self._cover_cache[aid] = data
         return data
 
-    # ---------- 本地信息缺失识别与手动匹配 ----------
+    # ---------- 本地音乐列表 / 刮削 / 编辑 ----------
     _LOCAL_EXTS = {".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wav", ".ape"}
 
     def _music_root(self) -> Path:
         """音乐输出根目录(可由面板配置覆盖)。"""
         return Path(self.cfg.d.get("music_dir") or MUSIC_DIR)
 
-    def local_missing(self) -> list[dict]:
-        """扫描音乐目录:返回尚未入库(或入库失败)的音频文件列表。"""
-        root = self._music_root()
-        known = set()
+    @staticmethod
+    def local_sid(path: Path) -> int:
+        """无网易云 ID 的本地文件用路径派生的负数 sid 区分。"""
+        import zlib
+        return -(zlib.crc32(str(path).encode("utf-8")) % 900_000_000 + 1)
+
+    @staticmethod
+    def _read_file_tags(path: Path) -> dict:
+        meta = {"title": path.stem, "artist": "", "album": ""}
+        try:
+            from mutagen import File as _MFile
+            mf = _MFile(str(path), easy=True)
+            if mf is None:
+                return meta
+            def first(k: str) -> str:
+                v = mf.get(k) or [""]
+                return str(v[0]) if v and v[0] is not None else ""
+            meta["title"] = first("title") or path.stem
+            meta["artist"] = first("artist")
+            meta["album"] = first("album")
+        except Exception:
+            pass
+        return meta
+
+    def _path_sid(self, p: Path) -> int | None:
+        rp = str(p.resolve())
         for s in self.state.all_songs():
-            if s.get("file_path") and s.get("status") == "ok":
+            if s.get("file_path") and str(Path(s["file_path"]).resolve()) == rp:
+                return int(s["sid"])
+        return None
+
+    def local_files(self) -> list[dict]:
+        """列出音乐目录全部音频文件:含当前信息(库内或文件内嵌)、缺失状态。"""
+        root = self._music_root()
+        by_path: dict[str, dict] = {}
+        for s in self.state.all_songs():
+            if s.get("file_path"):
                 try:
-                    known.add(str(Path(s["file_path"]).resolve()))
+                    by_path.setdefault(str(Path(s["file_path"]).resolve()), s)
                 except Exception:
                     pass
         out: list[dict] = []
@@ -446,25 +477,31 @@ class SyncEngine:
             rel = p.relative_to(root)
             if rel.parts and rel.parts[0] in ("_trash",):
                 continue
-            if str(p.resolve()) in known:
-                continue
+            rp = str(p.resolve())
+            row = by_path.get(rp)
             st = p.stat()
-            out.append({"path": str(p), "name": p.name,
-                        "size": st.st_size, "mtime": int(st.st_mtime)})
+            if row:
+                title = row.get("title") or ""
+                artist = row.get("artist") or ""
+                album = row.get("album") or ""
+                status = row.get("status") or ""
+                level = row.get("level") or ""
+            else:
+                t = self._read_file_tags(p)
+                title, artist, album = t["title"], t["artist"], t["album"]
+                status, level = "", ""
+            missing = (row is None) or (status != "ok") or (not title and not artist)
+            out.append({
+                "path": str(p), "name": p.name, "size": st.st_size, "mtime": int(st.st_mtime),
+                "title": title, "artist": artist, "album": album,
+                "in_db": row is not None, "status": status, "level": level, "missing": missing,
+            })
         return sorted(out, key=lambda x: x["path"].casefold())
 
-    def match_local_file(self, sid: int, filepath: str) -> dict:
-        """手动匹配:用网易云歌曲元数据补全本地文件标签/歌词/NFO 并登记入库。"""
-        p = Path(filepath)
-        if not p.is_file():
-            raise ValueError("文件不存在")
-        d = self.api.song_detail([sid])
-        if not d:
-            raise ValueError("未找到该歌曲")
-        detail = d[0]
+    def _scrape(self, sid: int, p: Path, detail: dict) -> dict:
+        """用网易云元数据补全本地文件:标签/封面/歌词/NFO,并登记入库。"""
         meta = self._build_meta(sid, detail, ("未命名歌单", 0))
         warns: list[str] = []
-
         lrc = ""
         lr = self.api.lyric(sid)
         if lr is None:
@@ -478,7 +515,6 @@ class SyncEngine:
         tw = tagger.tag_file(p, meta, cover, lrc if self.cfg.d["lyrics"].get("embed", True) else None)
         if tw:
             warns.append(tw)
-
         self.state.upsert_song(
             sid=sid, title=meta["title"], artist=meta["artist"], album=meta["album"],
             file_path=str(p), ext=p.suffix.lstrip(".").lower() or "mp3",
@@ -495,7 +531,65 @@ class SyncEngine:
                 self._write_nfo(p, meta, detail)
             except Exception:
                 warns.append("NFO 写入失败")
-        log.info("[match] %s - %s <- %s", meta["artist"], meta["title"], p.name)
+        log.info("[scrape] %s - %s <- %s", meta["artist"], meta["title"], p.name)
+        return {"ok": True, "title": meta["title"], "artist": meta["artist"], "warns": warns}
+
+    def match_local_file(self, sid: int, filepath: str) -> dict:
+        """手动匹配:搜索选定的网易云曲目补全本地文件。"""
+        p = Path(filepath)
+        if not p.is_file():
+            raise ValueError("文件不存在")
+        d = self.api.song_detail([sid])
+        if not d:
+            raise ValueError("未找到该歌曲")
+        return self._scrape(sid, p, d[0])
+
+    def refetch_local(self, filepath: str) -> dict:
+        """重新刮削:已入库按原 sid 重新抓取;未入库按文件名/内嵌信息自动搜索匹配。"""
+        p = Path(filepath)
+        if not p.is_file():
+            raise ValueError("文件不存在")
+        sid = self._path_sid(p)
+        if sid is None:
+            t = self._read_file_tags(p)
+            kw = f"{t['title']} {t['artist']}".strip() or p.stem
+            res = self.api.search(kw, limit=5)
+            if not res:
+                raise ValueError("未能自动匹配到网易云曲目,请使用手动匹配")
+            sid = int(res[0]["id"])
+        d = self.api.song_detail([sid])
+        if not d:
+            raise ValueError("未找到该歌曲")
+        return self._scrape(sid, p, d[0])
+
+    def edit_local(self, filepath: str, title: str, artist: str = "", album: str = "",
+                   track: int = 0) -> dict:
+        """手动修改信息:直接按用户填写写入标签与 NFO 并入库。"""
+        p = Path(filepath)
+        if not p.is_file():
+            raise ValueError("文件不存在")
+        sid = self._path_sid(p) or self.local_sid(p)
+        meta = {"title": title or p.stem, "artist": artist or "未知歌手",
+                "album": album or "未知专辑", "album_artist": artist or "未知歌手",
+                "track": int(track or 0), "disc": 0, "date": ""}
+        warns: list[str] = []
+        tw = tagger.tag_file(p, meta, None, None)
+        if tw:
+            warns.append(tw)
+        self.state.upsert_song(
+            sid=sid, title=meta["title"], artist=meta["artist"], album=meta["album"],
+            file_path=str(p), ext=p.suffix.lstrip(".").lower() or "mp3",
+            track_no=int(meta.get("track") or 0), level="manual",
+            downloaded_at=now_str(), status="ok",
+        )
+        if self.cfg.d.get("nfo", True):
+            try:
+                nfo.write_song_nfo(p.with_suffix(".nfo"), title=meta["title"], artist=meta["artist"],
+                                   album=meta["album"], albumartist=meta["artist"],
+                                   track=int(meta.get("track") or 0))
+            except Exception:
+                warns.append("NFO 写入失败")
+        log.info("[edit] %s - %s <- %s", meta["artist"], meta["title"], p.name)
         return {"ok": True, "title": meta["title"], "artist": meta["artist"], "warns": warns}
 
     # ---------- 输出整理 ----------
