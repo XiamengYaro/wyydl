@@ -83,6 +83,27 @@ cd fpk && ./build.sh
 - **停止/启动**:应用中心对应按钮即可(stop 只停容器,数据不动)。
 - **卸载**:卸载前自动 `docker compose down` 清理容器;配置与音乐文件保留在上述路径,确认不要后手动删除。
 
+## 常见问题
+
+**启动报 `Pulling ncm-api ... lookup registry-1.docker.io: Temporary failure in name resolution`**
+
+Docker Hub 在国内网络不可达,导致 `ncm-api` 镜像拉取失败(`wyydl-sync` 为本地构建,不受影响)。处理任选其一:
+
+```bash
+# 方案 A:配置镜像加速(fnOS Docker 设置里也有同类入口)
+sudo tee /etc/docker/daemon.json <<'EOF'
+{ "registry-mirrors": ["https://docker.1ms.run", "https://docker.m.daocloud.io"] }
+EOF
+sudo systemctl restart docker
+
+# 方案 B:在能访问 Docker Hub 的机器上导出,传到 NAS 导入
+docker pull moefurina/ncm-api:latest
+docker save moefurina/ncm-api:latest -o ncm-api.tar
+scp ncm-api.tar 用户名@NAS_IP:/tmp/ && ssh 用户名@NAS_IP "sudo docker load -i /tmp/ncm-api.tar"
+```
+
+加速地址失效率较高,方案 A 不行就换地址或用方案 B。若连 `nslookup registry-1.docker.io` 都失败,检查 NAS 的 DNS 设置(可改 223.5.5.5)。
+
 ## 备注
 
 - `platform=all`:包内不含预编译二进制,Docker 构建按设备架构自适应(x86_64/arm64 均可)。
