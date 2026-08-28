@@ -13,12 +13,14 @@ wyydl_fail () {
     return 1
 }
 
-# $1=端口 $2=音乐目录 → 由模板渲染出最终 compose(幂等)
+# $1=端口 $2=音乐目录 → 由模板渲染出最终 compose(幂等)。
+# 模板中的 ${wyydl_port:-8286} / ${wyydl_music_dir:-默认目录} 与向导字段同名,
+# appcenter 若支持向导变量插值则安装时即正确;脚本渲染作为确定性兜底。
 wyydl_render_compose () {
     local port="$1" dir="$2"
     [ -f "$WYYDL_TPL" ] || return 0  # 无模板时使用包内默认 compose
-    sed -e "s|- \"8286:8286\"|- \"$port:8286\"|" \
-        -e "s|- $WYYDL_DEFAULT_DIR:/music|- $dir:/music|" \
+    sed -e "s|\${wyydl_port:-8286}|$port|" \
+        -e "s|\${wyydl_music_dir:-$WYYDL_DEFAULT_DIR}|$dir|" \
         "$WYYDL_TPL" > "$WYYDL_COMPOSE"
 }
 

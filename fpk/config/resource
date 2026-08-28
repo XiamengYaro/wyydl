@@ -1,4 +1,12 @@
 {
+  "docker-project": {
+    "projects": [
+      {
+        "name": "wyydl",
+        "path": "docker"
+      }
+    ]
+  },
   "data-share": {
     "shares": [
       {

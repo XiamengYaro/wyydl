@@ -12,6 +12,10 @@
 
 同步位置:`fpk/manifest` 的 `version` 与 `sync/wyydl/__init__.py` 的 `__version__` 必须一致,并在本文件追加条目、更新 `fpk/manifest` 的 `changelog`。
 
+## 1.2.1 - 2026-08-28
+
+- 修复 1.2.0 引入的「存储映射在飞牛界面消失」:恢复 `docker-project` 托管(界面项目/映射可见),compose 内直接使用与向导字段同名的占位变量 `${wyydl_port:-8286}`、`${wyydl_music_dir:-默认目录}`(与 ui 配置的 `${wyydl_port}` 同一机制),生命周期脚本的渲染逻辑保留作为兜底,自定义配置两条路径都会生效。
+
 ## 1.2.0 - 2026-08-28
 
 - compose 管理权收归应用自身:移除 `docker-project` 资源声明,`cmd/main` 的启动/停止直接渲染并执行 compose。原因:appcenter 安装时会把 compose 注册进自己的项目,之后磁盘上的渲染结果不再被采用,导致向导配置的自定义目录/端口在飞牛界面与容器上不生效。

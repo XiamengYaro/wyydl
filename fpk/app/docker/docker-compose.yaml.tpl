@@ -29,9 +29,9 @@ services:
       - TZ=Asia/Shanghai
       - NCM_API=http://ncm-api:3000
     ports:
-      - "8286:8286"
+      - "${wyydl_port:-8286}:8286"
     volumes:
-      - /var/apps/wyydl/shares/wyydl/music:/music
+      - ${wyydl_music_dir:-/var/apps/wyydl/shares/wyydl/music}:/music
       - /var/apps/wyydl/var/config:/config
       - /var/apps/wyydl/var/db:/db
       - /var/apps/wyydl/var/logs:/logs
