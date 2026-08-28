@@ -12,6 +12,10 @@
 
 同步位置:`fpk/manifest` 的 `version` 与 `sync/wyydl/__init__.py` 的 `__version__` 必须一致,并在本文件追加条目、更新 `fpk/manifest` 的 `changelog`。
 
+## 1.1.1 - 2026-08-28
+
+- 修复:安装向导中自定义端口/音乐目录不生效的问题。原实现依赖 compose 的 `.env` 变量替换,但 appcenter 拉起 compose 的方式不受控;现改为生命周期脚本按向导配置直接**渲染最终 docker-compose.yaml**(模板 `docker-compose.yaml.tpl` 兜底默认值),并在 `$TRIM_PKGETC/wyydl.settings` 持久化、`logs/settings.log` 留痕。
+
 ## 1.1.0 - 2026-08-28
 
 - 新增桌面/应用中心入口(`app/ui/config`):点击应用卡片即在 fnOS 桌面窗口内打开 Web 面板;入口端口使用 `${wyydl_port}` 模板变量,自动跟随安装向导配置。
