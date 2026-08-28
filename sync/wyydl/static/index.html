@@ -118,6 +118,13 @@
     <p class="muted">布局为 archive 时按「歌手/专辑」归档,并为每个歌单生成同名 .m3u8(位于音乐根目录)。</p>
   </section>
 
+  <section class="card">
+    <h2>本地信息补全 <button class="btn mini" id="btnScan" style="float:right">扫描缺失</button></h2>
+    <p class="muted">扫描音乐目录中尚未入库/缺少信息的音频文件,搜索网易云曲目手动匹配并补全标签、歌词、NFO。</p>
+    <table><thead><tr><th>文件</th><th>大小</th><th></th></tr></thead>
+    <tbody id="missingBody"><tr><td colspan="3" class="muted">点击「扫描缺失」开始</td></tr></tbody></table>
+  </section>
+
   <div class="row">
     <section class="card">
       <h2>最近运行</h2>
@@ -480,6 +487,57 @@ async function startQr() {
 }
 function stopQr() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
 $('#btnLogin').onclick = () => { $('#btnLogin').disabled = true; startQr(); };
+
+/* ---------- 本地信息补全 ---------- */
+let missingFiles = [];
+let currentMatchPath = '';
+const fmtSize = n => n >= 1048576 ? (n / 1048576).toFixed(1) + 'MB' : (n / 1024).toFixed(0) + 'KB';
+$('#btnScan').onclick = async () => {
+  try {
+    const { files } = await api('/api/local/missing');
+    missingFiles = files;
+    $('#missingBody').innerHTML = files.map((f, i) => `
+      <tr>
+        <td>${esc(f.name)}<br><span class="muted">${esc(f.path)}</span></td>
+        <td class="muted">${fmtSize(f.size)}</td>
+        <td style="white-space:nowrap"><button class="btn mini" onclick="openMatch(${i})">匹配</button></td>
+      </tr>`).join('') || '<tr><td colspan="3" class="muted">没有缺失信息的文件 🎉</td></tr>';
+  } catch (e) { alert(e.message); }
+};
+async function openMatch(i) {
+  const f = missingFiles[i];
+  currentMatchPath = f.path;
+  let keywords = f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
+  showDialog(`<h2 style="margin:0 0 8px">匹配歌曲</h2>
+    <p class="muted">为「${esc(f.name)}」指定对应的网易云歌曲</p>
+    <div class="inline"><input type="text" id="mKey" value="${esc(keywords)}" placeholder="歌名 / 歌手">
+      <button class="btn mini" id="btnMKey">搜索</button></div>
+    <div id="mRes" style="max-height:50vh;overflow:auto;margin-top:10px"></div>`);
+  $('#btnMKey').onclick = () => doSearch($('#mKey').value);
+  $('#mKey').onkeydown = e => { if (e.key === 'Enter') doSearch($('#mKey').value); };
+  doSearch(keywords);
+}
+async function doSearch(kw) {
+  const el = $('#mRes');
+  if (!kw) return el.innerHTML = '<span class="muted">请输入关键词</span>';
+  el.innerHTML = '<span class="muted">搜索中…</span>';
+  let d;
+  try { d = await api('/api/search?keywords=' + encodeURIComponent(kw)); }
+  catch (e) { return el.innerHTML = '搜索失败:' + e.message; }
+  el.innerHTML = d.songs.map(s => `
+    <div class="inline" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 2px;cursor:pointer"
+         onclick="pickMatch(${s.id},'${esc(s.name)}')">
+      <span>${esc(s.name)} <span class="muted">${esc(s.artists)} · ${esc(s.album)}</span></span>
+      <button class="btn mini">匹配</button>
+    </div>`).join('') || '<span class="muted">无结果</span>';
+}
+async function pickMatch(sid, name) {
+  try {
+    const r = await api('/api/local/match', {method: 'POST', body: {sid, path: currentMatchPath}});
+    alert(`已匹配:${r.artist} - ${r.title}` + (r.warns && r.warns.length ? `\n提示:${r.warns.join('、')}` : ''));
+    dlg.close(); $('#btnScan').click();
+  } catch (e) { alert(e.message); }
+}
 
 /* ---------- 初始化 ---------- */
 async function init() {

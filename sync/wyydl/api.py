@@ -187,6 +187,11 @@ class NcmApi:
                 break
         return out
 
+    def search(self, keywords: str, limit: int = 15) -> list[dict]:
+        """全量搜索(cloudsearch),返回歌曲列表。"""
+        d = self.get("/cloudsearch", keywords=keywords, limit=max(1, min(limit, 30)))
+        return (d.get("result") or {}).get("songs") or []
+
     @staticmethod
     def extract_privs(resp: dict) -> dict[int, dict]:
         """从 song/detail 或 playlist/track/all 的响应提取 {sid: privilege}。"""

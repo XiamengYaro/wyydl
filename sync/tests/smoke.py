@@ -160,6 +160,35 @@ ok("事件:失败推送", _notify.should_notify(
 ok("事件:登录失效推送", _notify.should_notify(
     {"notify": {"events": {"on_login_expired": True}}}, {"status": "login_expired"}))
 
+# ---- 本地信息缺失识别与手动匹配 ----
+_mflac = config.MUSIC_DIR / "手动测试.flac"
+import struct as _st  # noqa: E402
+_si = _st.pack(">HHHH", 4096, 4096, 0, 0) \
+    + _st.pack(">Q", (44100 << 12) | (1 << 9) | (15 << 4)) + b"\x00" * 16 + b"\x00\x00"
+_mflac.write_bytes(b"fLaC" + b"\x80" + _st.pack(">I", 34)[1:] + _si)  # 最小合法 flac(仅 STREAMINFO)
+
+_eng2 = SyncEngine(config.Config.load(), st, _mock_api([
+    {"songs": [{"id": 7, "name": "测试歌",
+                "ar": [{"id": 1, "name": "歌手A"}, {"id": 2, "name": "歌手B"}],
+                "al": {"id": 5, "name": "专辑X", "picUrl": ""}, "no": 3,
+                "publishTime": 1072800000000, "dt": 250000}]},
+    {"lrc": {"lyric": "[00:00]测试歌词"}},
+    {"album": {"name": "专辑X", "genre": ["Pop"], "company": "厂牌",
+               "publishTime": 1072800000000, "description": ""}},
+]))
+ok("扫描到缺失文件", any(x["name"] == "手动测试.flac" for x in _eng2.local_missing()))
+_r = _eng2.match_local_file(7, str(_mflac))
+ok("手动匹配补全", _r["ok"] and _r["title"] == "测试歌" and _r["artist"] == "歌手A / 歌手B")
+# 合成文件无真实音频帧,mutagen 拒绝写标签属预期;验证「部分未成功」被如实上报
+ok("合成文件标签失败被上报", any("标签写入失败" in w for w in (_r.get("warns") or [])))
+ok("匹配后生成 NFO", (_mflac.parent / "手动测试.nfo").exists()
+   and (_mflac.parent / "album.nfo").exists())
+ok("匹配后入库", st.song(7)["status"] == "ok" and st.song(7)["file_path"] == str(_mflac))
+ok("匹配后不再缺失", not any(x["path"] == str(_mflac) for x in _eng2.local_missing()))
+_a = _mock_api([{"result": {"songs": [{"id": 9, "name": "搜索曲", "ar": [{"name": "甲"}],
+                                       "al": {"name": "辑"}, "dt": 180000}]}}])
+ok("搜索接口", _a.search("关键词")[0]["name"] == "搜索曲")
+
 # ---- Web 面板 ----
 from wyydl.web import AppContext, create_app  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

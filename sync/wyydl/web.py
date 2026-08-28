@@ -286,8 +286,40 @@ def create_app(ctx: AppContext) -> FastAPI:
         notify.notify(ctx.cfg.d, "【wyydl】测试通知:通道配置成功")
         return {"sent": True}
 
+    # ---------- 本地信息缺失识别与手动匹配 ----------
+    @app.get("/api/local/missing", dependencies=[Depends(guard)])
+    def local_missing() -> dict:
+        return {"files": ctx.engine.local_missing()}
+
+    @app.get("/api/search", dependencies=[Depends(guard)])
+    def search_songs(keywords: str = "", limit: int = 15) -> dict:
+        kw = keywords.strip()
+        if not kw:
+            return {"songs": []}
+        out = []
+        for s in ctx.api.search(kw, min(30, max(1, limit))):
+            artists = " / ".join(a.get("name") for a in (s.get("ar") or []) if a.get("name"))
+            out.append({
+                "id": s.get("id"), "name": s.get("name") or "", "artists": artists,
+                "album": (s.get("al") or {}).get("name") or "",
+                "duration": int((s.get("dt") or 0) // 1000),
+            })
+        return {"songs": out}
+
+    @app.post("/api/local/match", dependencies=[Depends(guard)])
+    async def match_local(body: MatchBody) -> dict:
+        try:
+            return ctx.engine.match_local_file(body.sid, body.path)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"匹配失败:{e}")
+
     return app
 
 
 class SyncBody(BaseModel):
     playlists: Optional[List[int]] = None
+
+
+class MatchBody(BaseModel):
+    sid: int
+    path: str

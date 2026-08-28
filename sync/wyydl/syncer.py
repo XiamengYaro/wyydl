@@ -422,6 +422,82 @@ class SyncEngine:
         self._cover_cache[aid] = data
         return data
 
+    # ---------- 本地信息缺失识别与手动匹配 ----------
+    _LOCAL_EXTS = {".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wav", ".ape"}
+
+    def _music_root(self) -> Path:
+        """音乐输出根目录(可由面板配置覆盖)。"""
+        return Path(self.cfg.d.get("music_dir") or MUSIC_DIR)
+
+    def local_missing(self) -> list[dict]:
+        """扫描音乐目录:返回尚未入库(或入库失败)的音频文件列表。"""
+        root = self._music_root()
+        known = set()
+        for s in self.state.all_songs():
+            if s.get("file_path") and s.get("status") == "ok":
+                try:
+                    known.add(str(Path(s["file_path"]).resolve()))
+                except Exception:
+                    pass
+        out: list[dict] = []
+        for p in root.rglob("*"):
+            if not (p.is_file() and p.suffix.lower() in self._LOCAL_EXTS):
+                continue
+            rel = p.relative_to(root)
+            if rel.parts and rel.parts[0] in ("_trash",):
+                continue
+            if str(p.resolve()) in known:
+                continue
+            st = p.stat()
+            out.append({"path": str(p), "name": p.name,
+                        "size": st.st_size, "mtime": int(st.st_mtime)})
+        return sorted(out, key=lambda x: x["path"].casefold())
+
+    def match_local_file(self, sid: int, filepath: str) -> dict:
+        """手动匹配:用网易云歌曲元数据补全本地文件标签/歌词/NFO 并登记入库。"""
+        p = Path(filepath)
+        if not p.is_file():
+            raise ValueError("文件不存在")
+        d = self.api.song_detail([sid])
+        if not d:
+            raise ValueError("未找到该歌曲")
+        detail = d[0]
+        meta = self._build_meta(sid, detail, ("未命名歌单", 0))
+        warns: list[str] = []
+
+        lrc = ""
+        lr = self.api.lyric(sid)
+        if lr is None:
+            warns.append("歌词获取失败")
+        else:
+            lrc = lr
+        al_pic = ((detail or {}).get("al") or {}).get("picUrl")
+        cover = self._cover_for(detail) if al_pic else None
+        if al_pic and cover is None:
+            warns.append("封面获取失败")
+        tw = tagger.tag_file(p, meta, cover, lrc if self.cfg.d["lyrics"].get("embed", True) else None)
+        if tw:
+            warns.append(tw)
+
+        self.state.upsert_song(
+            sid=sid, title=meta["title"], artist=meta["artist"], album=meta["album"],
+            file_path=str(p), ext=p.suffix.lstrip(".").lower() or "mp3",
+            track_no=int(meta.get("track") or 0), level="manual",
+            downloaded_at=now_str(), status="ok",
+        )
+        if lrc and self.cfg.d["lyrics"].get("lrc", True):
+            try:
+                p.with_suffix(".lrc").write_text(lrc, encoding="utf-8")
+            except Exception:
+                warns.append("歌词文件写入失败")
+        if self.cfg.d.get("nfo", True):
+            try:
+                self._write_nfo(p, meta, detail)
+            except Exception:
+                warns.append("NFO 写入失败")
+        log.info("[match] %s - %s <- %s", meta["artist"], meta["title"], p.name)
+        return {"ok": True, "title": meta["title"], "artist": meta["artist"], "warns": warns}
+
     # ---------- 输出整理 ----------
     def _export_m3u8(self) -> None:
         for pl in self.state.playlists():
