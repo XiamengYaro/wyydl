@@ -7,8 +7,14 @@ API 服务:[NeteaseCloudMusicApiEnhanced/api-enhanced](https://github.com/Neteas
 > ⚠️ 仅供个人学习与备份,请尊重版权,勿商用、勿分享下载内容。
 
 **两种部署方式**:
-- **fnOS 应用包(推荐)**:见 [fpk/README.md](fpk/README.md),`./build.sh` 产出 `wyydl.fpk`,应用中心安装即用;
+- **fnOS 应用包(推荐)**:见 [fpk/README.md](fpk/README.md),`./build.sh` 产出 `wyydl.fpk`,应用中心安装即用;也可直接从 [Releases](https://github.com/XiamengYaro/wyydl/releases) 下载打好的 `wyydl.fpk`;
 - **Docker Compose**:按下述步骤手动部署。
+
+推送到 GitHub 的 `v*` 标签会自动跑冒烟测试、打包 fpk 并发布 Release(见 [.github/workflows/release.yml](.github/workflows/release.yml))。
+
+## 开源许可
+
+[MIT](LICENSE) © 2026 Xiameng
 
 ## 目录结构
 

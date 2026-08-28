@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]          # 推送 v* 标签 → 测试 + 打包 + 发布 Release
+  workflow_dispatch:       # 也允许手动触发(仅测试+打包,不发布)
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装 fnpack
+        run: |
+          curl -fsSL -o /usr/local/bin/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64
+          chmod +x /usr/local/bin/fnpack
+
+      - name: 校验标签与 manifest 版本一致
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          MANIFEST_VERSION=$(grep -E '^version' fpk/manifest | head -1 | awk -F= '{print $2}' | tr -d ' ')
+          echo "tag=$TAG manifest=$MANIFEST_VERSION"
+          [ "$TAG" = "$MANIFEST_VERSION" ] || { echo "错误:标签 v$TAG 与 manifest 版本 $MANIFEST_VERSION 不一致"; exit 1; }
+
+      - name: 运行冒烟测试
+        run: |
+          cd sync
+          pip install -r requirements.txt
+          python -m tests.smoke
+
+      - name: 打包 fpk
+        run: ./fpk/build.sh
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: wyydl-fpk
+          path: fpk/wyydl.fpk
+
+      - name: 创建 Release 并上传 fpk
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" fpk/wyydl.fpk \
+            --title "$GITHUB_REF_NAME" --generate-notes
