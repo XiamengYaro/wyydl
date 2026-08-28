@@ -27,7 +27,20 @@ DEFAULTS: dict = {
     "lyrics": {"lrc": True, "embed": True},
     "nfo": True,                      # 生成 album.nfo / artist.nfo(Jellyfin/Emby/Kodi)
     "mirror": False,                  # playlist 布局下,歌单移除的歌曲是否移入 _trash
-    "notify": {"type": "feishu", "url": "", "secret": ""},
+    "notify": {
+        "type": "feishu",
+        "url": "",
+        "secret": "",
+        "events": {
+            "on_start": False,        # 同步开始
+            "on_complete": False,     # 每轮完成(检测完成)
+            "on_changes": True,       # 有新增/升级/移除变更
+            "on_failed": True,        # 有歌曲下载失败
+            "on_partial": True,       # 部分未成功(NFO/封面/歌词/标签)
+            "on_login_expired": True, # 登录失效
+            "on_error": True,         # 轮次异常
+        },
+    },
     "web": {"enabled": True, "port": 8286, "token": ""},
     "limits": {"download_concurrency": 3, "api_delay": [1.0, 3.0]},
 }

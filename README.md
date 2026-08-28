@@ -83,7 +83,12 @@ quality:
 lyrics: {lrc: true, embed: true}
 nfo: true                    # 生成单曲 <歌名>.nfo + album.nfo + artist.nfo(Jellyfin/Emby/Kodi)
 mirror: false                # 歌单移除的歌曲是否移入 _trash
-notify: {type: feishu, url: "https://open.feishu.cn/open-apis/bot/v2/hook/xxx", secret: "签名密钥(可选)"}
+notify: {type: feishu, url: "https://open.feishu.cn/open-apis/bot/v2/hook/xxx", secret: "签名密钥(可选)",
+         events: {on_start: false, on_complete: false, on_changes: true, on_failed: true,
+                  on_partial: true, on_login_expired: true, on_error: true}}
+# 推送事件(面板「推送事件」可勾选):
+#   on_start 同步开始 | on_complete 每轮完成(检测完成,无变化也推) | on_changes 有新增/升级/移除变更
+#   on_failed 下载失败 | on_partial 部分未成功(NFO/封面/歌词/标签) | on_login_expired 登录失效 | on_error 轮次异常
 web: {enabled: true, port: 8286, token: ""}   # token 建议在局域网不可信时设置
 ```
 

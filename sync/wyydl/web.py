@@ -196,6 +196,7 @@ def create_app(ctx: AppContext) -> FastAPI:
             "mirror": d.get("mirror", False),
             "notify_type": nf.get("type") or "feishu", "notify_url": nf.get("url") or "",
             "notify_secret": nf.get("secret") or "",
+            "notify_events": notify.events_for(d),
             "web_enabled": web.get("enabled", True), "web_port": web.get("port") or 8286,
             "web_token": web.get("token") or "",
             "concurrency": d["limits"].get("download_concurrency") or 3,
@@ -221,6 +222,11 @@ def create_app(ctx: AppContext) -> FastAPI:
             port = max(1, min(65535, int(payload.get("web_port") or 8286)))
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail="并发/间隔/端口必须是数字")
+        events_in = payload.get("events") or {}
+        events = dict(notify.DEFAULT_EVENTS)
+        for k in events:
+            if k in events_in:
+                events[k] = bool(events_in[k])
         new_cfg = Config({
             "schedule": schedule, "layout": layout,
             "naming": str(payload.get("naming") or "").strip(),
@@ -232,6 +238,7 @@ def create_app(ctx: AppContext) -> FastAPI:
                 "type": "feishu" if payload.get("notify_type") == "feishu" else "webhook",
                 "url": str(payload.get("notify_url") or "").strip(),
                 "secret": str(payload.get("notify_secret") or "").strip(),
+                "events": events,
             },
             "web": {
                 "enabled": bool(payload.get("web_enabled")), "port": port,

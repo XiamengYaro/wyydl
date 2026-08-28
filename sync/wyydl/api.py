@@ -216,11 +216,12 @@ class NcmApi:
     def song_url(self, sid: int, level: str) -> dict:
         return self.song_url_batch([sid], level).get(sid, {})
 
-    def lyric(self, sid: int) -> str:
+    def lyric(self, sid: int) -> str | None:
+        """歌词文本;None 表示获取失败(接口异常),空串表示无歌词。"""
         try:
             d = self.get("/lyric", id=sid)
         except ApiError:
-            return ""
+            return None
         return str((d.get("lrc") or {}).get("lyric") or "")
 
     def album(self, aid: int) -> dict:

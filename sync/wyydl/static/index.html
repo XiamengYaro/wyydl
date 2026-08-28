@@ -189,6 +189,9 @@
         <input type="password" id="sNotifySecret" placeholder="可选">
       </label>
     </div>
+    <div class="sect">推送事件(勾选需要推送的场景)</div>
+    <div class="ckrow" id="sEvents"></div>
+    <p class="muted" style="margin:6px 0 0">「下载失败」指整首歌未入库;「部分未成功」指歌曲已入库但 NFO/封面/歌词/标签等某项失败。</p>
 
     <div class="sect">性能与面板</div>
     <div class="fgrid">
@@ -335,6 +338,15 @@ const LEVELS = [
   ['higher', '较高'], ['standard', '标准'], ['jyeffect', '高清臻音'], ['sky', '沉浸环绕'],
   ['dolby', '杜比全景声'], ['vivid', '臻音全景声'],
 ];
+const NOTIFY_EVENTS = [
+  ['on_start', '同步开始'],
+  ['on_complete', '每轮完成(检测完成,无变化也推)'],
+  ['on_changes', '有新增/升级/移除变更'],
+  ['on_failed', '下载失败'],
+  ['on_partial', '部分未成功(NFO/封面/歌词/标签)'],
+  ['on_login_expired', '登录失效'],
+  ['on_error', '轮次异常'],
+];
 async function loadSettings() {
   const s = await api('/api/settings');
   $('#sSchedule').value = s.schedule; $('#sLayout').value = s.layout; $('#sNaming').value = s.naming;
@@ -344,6 +356,9 @@ async function loadSettings() {
   $('#sUpgrade').checked = s.upgrade_existing; $('#sLrc').checked = s.lrc; $('#sEmbed').checked = s.embed;
   $('#sNfo').checked = s.nfo;
   $('#sNotifyType').value = s.notify_type; $('#sNotifyUrl').value = s.notify_url; $('#sNotifySecret').value = s.notify_secret;
+  const ev = s.notify_events || {};
+  $('#sEvents').innerHTML = NOTIFY_EVENTS.map(([k, label]) =>
+    `<label><input type="checkbox" data-ev="${k}" ${ev[k] ? 'checked' : ''}> ${label}</label>`).join('');
   $('#sChain').innerHTML = LEVELS.map(([k, label]) =>
     `<label><input type="checkbox" value="${k}" ${s.chain.includes(k) ? 'checked' : ''}> ${label} <span class="muted">${k}</span></label>`).join('');
 }
@@ -358,6 +373,7 @@ function collectSettings() {
     lrc: $('#sLrc').checked, embed: $('#sEmbed').checked, nfo: $('#sNfo').checked,
     notify_type: $('#sNotifyType').value, notify_url: $('#sNotifyUrl').value.trim(),
     notify_secret: $('#sNotifySecret').value.trim(),
+    events: Object.fromEntries(NOTIFY_EVENTS.map(([k]) => [k, $(`#sEvents input[data-ev="${k}"]`).checked])),
     concurrency: +$('#sConc').value || 3,
     delay_min: +$('#sDelayMin').value || 1, delay_max: +$('#sDelayMax').value || 3,
     web_enabled: $('#sWebEnabled').checked, web_port: +$('#sWebPort').value || 8286,

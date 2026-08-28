@@ -66,8 +66,10 @@ class SyncEngine:
         summary: dict = {
             "trigger": trigger, "status": "ok", "playlists": [], "levels": {},
             "added": 0, "upgraded": 0, "failed": 0, "removed": 0,
+            "partial": 0, "partial_failures": [],
             "failures": [], "started": started,
         }
+        notify.notify_start(self.cfg.d)
         try:
             self._run(summary, playlist_ids)
         except LoginExpired:
@@ -82,9 +84,7 @@ class SyncEngine:
             self.progress = {}
             summary["finished"] = now_str()
             self.state.record_run(started, summary["finished"], summary["status"], summary)
-            if (summary["added"] or summary["upgraded"] or summary["failed"]
-                    or summary["removed"] or summary["status"] != "ok"):
-                notify.notify(self.cfg.d, notify.run_summary_text(summary))
+            notify.notify_run(self.cfg.d, summary)
         return summary
 
     # ================= 主流程 =================
@@ -251,6 +251,11 @@ class SyncEngine:
                 self._set_progress("下载", f"{done}/{total}", done=done, total=total)
                 if r["ok"]:
                     summary["levels"][r.get("level") or "?"] = summary["levels"].get(r.get("level") or "?", 0) + 1
+                    if r.get("warns"):
+                        summary["partial"] += 1
+                        summary["partial_failures"].append({
+                            "title": r.get("title") or "", "artist": r.get("artist") or "",
+                            "items": r.get("warns") or []})
                 else:
                     summary["failed"] += 1
                     summary["failures"].append(r)
@@ -304,11 +309,22 @@ class SyncEngine:
         real = tmp.with_suffix(f".{ext}")
         tmp.rename(real)
 
+        # 次要失败收集:歌词/封面/标签/NFO 任一失败记为「部分未成功」,不影响下载成功判定
+        warns: list[str] = []
         lrc = ""
         if self.cfg.d["lyrics"].get("lrc", True) or self.cfg.d["lyrics"].get("embed", True):
-            lrc = self.api.lyric(sid)
-        cover = self._cover_for(detail) if (detail or {}).get("al", {}).get("id") is not None else None
-        tagger.tag_file(real, meta, cover, lrc if self.cfg.d["lyrics"].get("embed", True) else None)
+            lrc_res = self.api.lyric(sid)  # None=获取失败
+            if lrc_res is None:
+                warns.append("歌词获取失败")
+            else:
+                lrc = lrc_res
+        al_pic = ((detail or {}).get("al") or {}).get("picUrl")
+        cover = self._cover_for(detail) if al_pic else None
+        if al_pic and cover is None:
+            warns.append("封面获取失败")
+        tag_warn = tagger.tag_file(real, meta, cover, lrc if self.cfg.d["lyrics"].get("embed", True) else None)
+        if tag_warn:
+            warns.append(tag_warn)
 
         rel = tagger.song_relative_path(meta, self.cfg.layout, self.cfg.naming)
         final = MUSIC_DIR / f"{rel}.{ext}"
@@ -330,10 +346,11 @@ class SyncEngine:
             try:
                 self._write_nfo(final, meta, detail)
             except Exception as e:
+                warns.append("NFO 写入失败")
                 log.warning("NFO 写入失败 %s: %s", final.parent, e)
         log.info("[%s] %s - %s (%s)", kind, meta["artist"], meta["title"], entry.get("level") or want_level)
         return {"ok": True, "kind": kind, "level": str(entry.get("level") or want_level),
-                "title": meta["title"], "artist": meta["artist"]}
+                "title": meta["title"], "artist": meta["artist"], "warns": warns}
 
     def _write_nfo(self, final: Path, meta: dict, detail: dict) -> None:
         """单曲 <歌名>.nfo(两种布局都写);专辑/艺人级 NFO 仅归档布局有目录结构。"""

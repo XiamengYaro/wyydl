@@ -147,6 +147,19 @@ ok("下载进度回调", eng.active[1]["downloaded"] == 50 and eng.active[1]["to
 eng.active.pop(1)
 ok("活动列表清理", not eng.active)
 
+# ---- 通知事件 ----
+from wyydl import notify as _notify  # noqa: E402
+
+cfg_ev = {"notify": {"type": "feishu", "url": "x", "events": {"on_changes": True}}}
+ok("事件:有变更推送", _notify.should_notify(cfg_ev, {"status": "ok", "added": 1, "failed": 0, "partial": 0}))
+ok("事件:无变更不推", not _notify.should_notify(cfg_ev, {"status": "ok", "added": 0, "failed": 0, "partial": 0}))
+ok("事件:检测完成全推", _notify.should_notify(
+    {"notify": {"events": {"on_complete": True}}}, {"status": "ok", "added": 0}))
+ok("事件:失败推送", _notify.should_notify(
+    {"notify": {"events": {"on_failed": True}}}, {"status": "ok", "failed": 2, "added": 0}))
+ok("事件:登录失效推送", _notify.should_notify(
+    {"notify": {"events": {"on_login_expired": True}}}, {"status": "login_expired"}))
+
 # ---- Web 面板 ----
 from wyydl.web import AppContext, create_app  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -177,12 +190,16 @@ good = client.put("/api/settings", json={
     "upgrade_existing": True, "lrc": True, "embed": False, "mirror": False,
     "nfo": True,
     "notify_type": "feishu", "notify_url": "https://example.com/hook", "notify_secret": "",
+    "events": {"on_failed": False, "on_start": True},
     "web_enabled": True, "web_port": 8286, "web_token": "t1",
     "concurrency": 2, "delay_min": 1, "delay_max": 2})
 ok("保存结构化设置", good.status_code == 200)
 ok("设置生效", cfg.d["schedule"] == "30 5 * * *" and cfg.d["web"]["token"] == "t1"
    and cfg.d["lyrics"]["embed"] is False and cfg.d["limits"]["download_concurrency"] == 2
    and cfg.d["nfo"] is True and cfg.quality_chain == ["hires", "lossless"])
+ok("通知事件生效", cfg.d["notify"]["events"]["on_failed"] is False
+   and cfg.d["notify"]["events"]["on_start"] is True
+   and cfg.d["notify"]["events"]["on_changes"] is True)
 ok("表单保存不影响歌单与 api_base", cfg.playlist_ids() == [999] and cfg.d["api_base"].startswith("http"))
 
 print(f"\n全部 {passed} 项通过 ✅")

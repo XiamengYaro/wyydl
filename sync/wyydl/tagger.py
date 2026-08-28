@@ -45,7 +45,8 @@ def _cover_mime(data: bytes) -> str:
     return "image/png" if data[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
 
 
-def tag_file(path: Path, meta: dict, cover: bytes | None, lrc: str | None) -> None:
+def tag_file(path: Path, meta: dict, cover: bytes | None, lrc: str | None) -> str | None:
+    """写入标签;返回 None 表示成功,否则返回失败说明(供部分失败统计)。"""
     ext = path.suffix.lower()
     try:
         if ext == ".flac":
@@ -55,9 +56,9 @@ def tag_file(path: Path, meta: dict, cover: bytes | None, lrc: str | None) -> No
         elif ext == ".m4a":
             _tag_mp4(path, meta, cover, lrc)
         # 其他容器(aac/ape 等)不做标签写入,保留原始流
-    except Exception:
-        # 标签失败不判定为下载失败,文件本体已校验通过
-        pass
+        return None
+    except Exception as e:
+        return f"标签写入失败:{e.__class__.__name__}"
 
 
 def _tag_flac(path: Path, meta: dict, cover: bytes | None, lrc: str | None) -> None:
