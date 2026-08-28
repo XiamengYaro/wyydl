@@ -1,5 +1,5 @@
 appname          = wyydl
-version          = 1.2.1
+version          = 1.2.2
 display_name     = 网易云歌单同步
 desc             = 定时同步网易云音乐歌单到本地:自动协商最高音质、嵌入封面/歌词、生成 NFO 元数据,内置 Web 控制面板与飞书通知。基于 api-enhanced 与 ncmdump-go。仅供个人学习与备份,请尊重版权。
 platform         = all
@@ -13,4 +13,4 @@ desktop_uidir    = ui
 desktop_applaunchname = wyydl.main
 ctl_stop         = true
 checkport        = false
-changelog        = 1.2.1:恢复 appcenter 托管使存储映射在飞牛界面可见,compose 内置向导变量占位;1.2.0:compose 改由应用自身管理;1.1.1:修复向导配置不生效;1.1.0:新增桌面入口;1.0.0:首个版本。
+changelog        = 1.2.2:README 声明项目为纯 AI Vibe Coding 生成;1.2.1:恢复 appcenter 托管使存储映射在飞牛界面可见;1.2.0:compose 改由应用自身管理;1.1.1:修复向导配置不生效;1.1.0:新增桌面入口;1.0.0:首个版本。

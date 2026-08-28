@@ -12,6 +12,10 @@
 
 同步位置:`fpk/manifest` 的 `version` 与 `sync/wyydl/__init__.py` 的 `__version__` 必须一致,并在本文件追加条目、更新 `fpk/manifest` 的 `changelog`。
 
+## 1.2.2 - 2026-08-28
+
+- README 声明:本项目为**纯 AI Vibe Coding 生成**,全部代码与文档由 AI 编写,人类负责需求与验收。仓库描述同步更新。
+
 ## 1.2.1 - 2026-08-28
 
 - 修复 1.2.0 引入的「存储映射在飞牛界面消失」:恢复 `docker-project` 托管(界面项目/映射可见),compose 内直接使用与向导字段同名的占位变量 `${wyydl_port:-8286}`、`${wyydl_music_dir:-默认目录}`(与 ui 配置的 `${wyydl_port}` 同一机制),生命周期脚本的渲染逻辑保留作为兜底,自定义配置两条路径都会生效。

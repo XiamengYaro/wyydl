@@ -5,6 +5,8 @@
 API 服务:[NeteaseCloudMusicApiEnhanced/api-enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced)(Docker 镜像 `moefurina/ncm-api`)。
 
 > ⚠️ 仅供个人学习与备份,请尊重版权,勿商用、勿分享下载内容。
+>
+> 🤖 **AI 声明:本项目为纯 AI Vibe Coding 生成**——全部代码、文档与打包配置均由 AI(编码代理)编写,人类仅负责提出需求、验收与点击"授权"。欢迎围观 AI 的工程能力。
 
 **两种部署方式**:
 - **fnOS 应用包(推荐)**:见 [fpk/README.md](fpk/README.md),`./build.sh` 产出 `wyydl.fpk`,应用中心安装即用;也可直接从 [Releases](https://github.com/XiamengYaro/wyydl/releases) 下载打好的 `wyydl.fpk`;
