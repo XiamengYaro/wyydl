@@ -5,9 +5,8 @@ import re
 from pathlib import Path
 
 from mutagen.flac import FLAC, Picture
-from mutagen.id3 import ID3, APIC, TALB, TDRC, TIT2, TPE1, TPOS, TRCK, USLT
-from mutagen.mp3 import MP3
-from mutagen.mp4 import MP4, MP4Cover
+from mutagen.id3 import ID3, ID3NoHeaderError, APIC, TALB, TCON, TDRC, TIT2, TPE1, TPE2, TPOS, TPUB, TRCK, TXXX, USLT
+from mutagen.mp4 import MP4, MP4Cover, MP4FreeForm
 
 _ILLEGAL = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 _MULTI_SPACE = re.compile(r"\s+")
@@ -72,6 +71,12 @@ def _tag_flac(path: Path, meta: dict, cover: bytes | None, lrc: str | None) -> N
     f["album"] = meta.get("album") or ""
     if meta.get("album_artist"):
         f["albumartist"] = meta["album_artist"]
+    if meta.get("genre"):
+        f["GENRE"] = str(meta["genre"])
+    if meta.get("label"):
+        f["PUBLISHER"] = str(meta["label"])
+    if meta.get("sid"):
+        f["NETEASE_ID"] = str(meta["sid"])
     if track := int(meta.get("track") or 0):
         f["tracknumber"] = str(track)
     if disc := int(meta.get("disc") or 0):
@@ -92,12 +97,22 @@ def _tag_flac(path: Path, meta: dict, cover: bytes | None, lrc: str | None) -> N
 
 
 def _tag_mp3(path: Path, meta: dict, cover: bytes | None, lrc: str | None) -> None:
-    tags = ID3()
+    # 增量更新:保留文件里已有的封面/歌词等帧,只覆盖本次提供的字段
+    try:
+        tags = ID3(str(path))
+    except ID3NoHeaderError:
+        tags = ID3()
     tags.add(TIT2(encoding=3, text=meta.get("title") or ""))
     tags.add(TPE1(encoding=3, text=meta.get("artist") or ""))
     tags.add(TALB(encoding=3, text=meta.get("album") or ""))
     if meta.get("album_artist"):
         tags.add(TPE2(encoding=3, text=meta["album_artist"]))
+    if meta.get("genre"):
+        tags.add(TCON(encoding=3, text=str(meta["genre"])))
+    if meta.get("label"):
+        tags.add(TPUB(encoding=3, text=str(meta["label"])))
+    if meta.get("sid"):
+        tags.add(TXXX(encoding=3, desc="NETEASE_SONG_ID", text=str(meta["sid"])))
     if track := int(meta.get("track") or 0):
         tags.add(TRCK(encoding=3, text=str(track)))
     if disc := int(meta.get("disc") or 0):
@@ -108,9 +123,7 @@ def _tag_mp3(path: Path, meta: dict, cover: bytes | None, lrc: str | None) -> No
         tags.add(USLT(encoding=3, lang="chi", desc="", text=lrc))
     if cover:
         tags.add(APIC(encoding=3, mime=_cover_mime(cover), type=3, desc="Cover", data=cover))
-    audio = MP3(str(path))
-    audio.tags = tags
-    audio.save()
+    tags.save(str(path))
 
 
 def _tag_mp4(path: Path, meta: dict, cover: bytes | None, lrc: str | None) -> None:
@@ -119,6 +132,10 @@ def _tag_mp4(path: Path, meta: dict, cover: bytes | None, lrc: str | None) -> No
     m["\xa9ART"] = [meta.get("artist") or ""]
     m["aART"] = [meta.get("album_artist") or meta.get("artist") or ""]
     m["\xa9alb"] = [meta.get("album") or ""]
+    if meta.get("genre"):
+        m["\xa9gen"] = [str(meta["genre"])]
+    if meta.get("sid"):
+        m["----:com.apple.iTunes:NETEASE_ID"] = [MP4FreeForm(str(meta["sid"]).encode("utf-8"))]
     if track := int(meta.get("track") or 0):
         m["trkn"] = [(track, 0)]
     if meta.get("date"):

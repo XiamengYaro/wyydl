@@ -90,7 +90,10 @@ def _mock_api(responses):
     seq = list(responses)
 
     def handler(request):
-        return _hx.Response(200, json=seq.pop(0))
+        item = seq.pop(0)
+        if isinstance(item, _hx.Response):  # 预构建响应(如封面二进制)直接透传
+            return item
+        return _hx.Response(200, json=item)
 
     a = _NcmApi("http://mock", lambda: None, (0.0, 0.0))
     a.client = _hx.Client(transport=_hx.MockTransport(handler))
@@ -174,9 +177,9 @@ _eng2 = SyncEngine(_cfg2, st, _mock_api([
                 "ar": [{"id": 1, "name": "歌手A"}, {"id": 2, "name": "歌手B"}],
                 "al": {"id": 5, "name": "专辑X", "picUrl": ""}, "no": 3,
                 "publishTime": 1072800000000, "dt": 250000}]},
-    {"lrc": {"lyric": "[00:00]测试歌词"}},
     {"album": {"name": "专辑X", "genre": ["Pop"], "company": "厂牌",
                "publishTime": 1072800000000, "description": ""}},
+    {"lrc": {"lyric": "[00:00]测试歌词"}},
 ]))
 _lf = _eng2.local_files()
 ok("本地列表含未入库文件", any(x["name"] == "手动测试.flac" and not x["in_db"] and x["missing"] for x in _lf))
@@ -195,9 +198,9 @@ _eng3 = SyncEngine(config.Config.load(), st, _mock_api([
                 "ar": [{"id": 1, "name": "歌手A"}],
                 "al": {"id": 5, "name": "专辑X", "picUrl": ""}, "no": 3,
                 "publishTime": 1072800000000, "dt": 250000}]},
-    {"lrc": {"lyric": "[00:00]测试歌词"}},
     {"album": {"name": "专辑X", "genre": ["Pop"], "company": "厂牌",
                "publishTime": 1072800000000, "description": ""}},
+    {"lrc": {"lyric": "[00:00]测试歌词"}},
 ]))
 _r3 = _eng3.refetch_local(_newp)
 ok("重新刮削", _r3["ok"] and _r3["title"] == "测试歌")
@@ -209,6 +212,29 @@ ok("手动修改后不再缺失", not any(x["path"] == _newp and x["missing"] fo
 _a = _mock_api([{"result": {"songs": [{"id": 9, "name": "搜索曲", "ar": [{"name": "甲"}],
                                        "al": {"name": "辑"}, "dt": 180000}]}}])
 ok("搜索接口", _a.search("关键词")[0]["name"] == "搜索曲")
+
+# ---- 全量信息写入(MP3 增量标签:流派/厂牌/歌曲ID/封面/歌词)----
+_mp3 = config.MUSIC_DIR / "全量信息.mp3"
+_mp3.write_bytes(b"")
+_eng4 = SyncEngine(config.Config.load(), st, _mock_api([
+    {"songs": [{"id": 8, "name": "全量曲", "ar": [{"id": 1, "name": "歌手A"}],
+                "al": {"id": 5, "name": "专辑X", "picUrl": "http://mock/pic.jpg"}, "no": 9,
+                "publishTime": 1072800000000, "dt": 200000}]},
+    {"album": {"name": "专辑X", "genre": ["Pop", "Rock"], "company": "厂牌X",
+               "publishTime": 1072800000000, "description": "简介"}},
+    {"lrc": {"lyric": "[00:00]词"}},
+    _hx.Response(200, content=b"\xff\xd8\xff\xe0FAKEJPEG")  # 封面字节
+]))
+_r5 = _eng4.match_local_file(8, str(_mp3))
+ok("MP3 全量匹配无警告", _r5["ok"] and not _r5.get("warns"))
+from mutagen.id3 import ID3 as _ID3  # noqa: E402
+_tags = _ID3(_r5["path"])
+ok("MP3 流派/厂牌写入", _tags["TCON"].text[0] == "Pop, Rock" and _tags["TPUB"].text[0] == "厂牌X")
+ok("MP3 网易云ID写入", _tags.getall("TXXX:NETEASE_SONG_ID")[0].text[0] == "8")
+ok("MP3 标题/歌手/音轨", _tags["TIT2"].text[0] == "全量曲" and _tags["TPE1"].text[0] == "歌手A"
+   and _tags["TRCK"].text[0] == "9")
+ok("MP3 封面内嵌", bool(_tags.getall("APIC")) and _tags.getall("APIC")[0].data == b"\xff\xd8\xff\xe0FAKEJPEG")
+ok("MP3 歌词内嵌", bool(_tags.getall("USLT")))
 
 # ---- Web 面板 ----
 from wyydl.web import AppContext, create_app  # noqa: E402

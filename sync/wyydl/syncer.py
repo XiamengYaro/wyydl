@@ -274,6 +274,9 @@ class SyncEngine:
                       detail: dict, pre: dict | None) -> dict:
         members = self._membership([sid])
         meta = self._build_meta(sid, detail, members.get(sid, ("未命名歌单", 0)))
+        info = self._album_info(detail)
+        meta["genre"] = self._genre_of(info)
+        meta["label"] = str(info.get("company") or "")
         fail = lambda reason: {"ok": False, "title": meta["title"], "artist": meta["artist"], "reason": reason}  # noqa: E731
 
         # 取流:预取结果不可用(试听/空链)时逐档降档重试
@@ -353,27 +356,16 @@ class SyncEngine:
                 "title": meta["title"], "artist": meta["artist"], "warns": warns}
 
     def _write_nfo(self, final: Path, meta: dict, detail: dict) -> None:
-        """单曲 <歌名>.nfo(两种布局都写);专辑/艺人级 NFO 仅归档布局有目录结构。"""
+        """单曲 <歌名>.nfo(所有布局都写);专辑/歌手级 NFO 跟随布局目录结构。"""
         d = detail or {}
-        aid = meta.get("album_id")
-        info: dict = {}
-        if aid is not None:
-            if aid not in self._album_cache:
-                try:
-                    info = self.api.album(aid).get("album") or {}
-                except ApiError:
-                    info = {}
-                self._album_cache[aid] = info
-            info = self._album_cache[aid] or {}
+        info = self._album_info(detail)
         releasedate = ""
         if info.get("publishTime"):
             try:
                 releasedate = _dt.datetime.utcfromtimestamp(int(info["publishTime"]) / 1000).strftime("%Y-%m-%d")
             except (ValueError, OSError, OverflowError):
                 releasedate = ""
-        genre = info.get("genre") or ""
-        if isinstance(genre, list):
-            genre = ", ".join(str(g) for g in genre)
+        genre = self._genre_of(info)
         ar = d.get("ar") or []
         ncm_aid = str(ar[0].get("id") or "") if ar else ""
 
@@ -404,6 +396,26 @@ class SyncEngine:
             nfo.write_artist_nfo(final.parent / "artist.nfo", name=meta["album_artist"],
                                  genre=str(genre), ncm_id=ncm_aid)
         # flat/playlist 布局无歌手/专辑目录结构,不写这两级 NFO
+
+    def _album_info(self, detail: dict) -> dict:
+        """专辑详情(流派/厂牌/发行日/简介),按专辑 ID 缓存。"""
+        al = (detail or {}).get("al") or {}
+        aid = al.get("id")
+        if aid is None:
+            return {}
+        if aid not in self._album_cache:
+            try:
+                self._album_cache[aid] = self.api.album(aid).get("album") or {}
+            except ApiError:
+                self._album_cache[aid] = {}
+        return self._album_cache[aid] or {}
+
+    @staticmethod
+    def _genre_of(info: dict) -> str:
+        g = info.get("genre") or ""
+        if isinstance(g, list):
+            return ", ".join(str(x) for x in g)
+        return str(g or "")
 
     def _cover_for(self, detail: dict) -> bytes | None:
         al = (detail or {}).get("al") or {}
@@ -503,6 +515,9 @@ class SyncEngine:
     def _scrape(self, sid: int, p: Path, detail: dict) -> dict:
         """用网易云元数据补全本地文件:标签/封面/歌词/NFO;按「刮削分类」整理到规范位置并入库。"""
         meta = self._build_meta(sid, detail, ("未命名歌单", 0))
+        info = self._album_info(detail)
+        meta["genre"] = self._genre_of(info)
+        meta["label"] = str(info.get("company") or "")
         warns: list[str] = []
         layout = self.cfg.layout
         final = self._organize_target(p, meta, layout) if layout in ("flat", "artist", "album") else p

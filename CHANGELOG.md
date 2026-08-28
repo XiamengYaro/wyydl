@@ -12,6 +12,12 @@
 
 同步位置:`fpk/manifest` 的 `version` 与 `sync/wyydl/__init__.py` 的 `__version__` 必须一致,并在本文件追加条目、更新 `fpk/manifest` 的 `changelog`。
 
+## 1.9.0 - 2026-08-28
+
+- **歌曲信息全量写入音乐文件**:标签新增流派(GENRE/TCON/©gen)、厂牌(PUBLISHER/TPUB)、网易云歌曲 ID(FLAC `NETEASE_ID` / MP3 `TXXX:NETEASE_SONG_ID` / M4A freeform),来源 `/album` 接口按专辑缓存。
+- MP3 标签改为**增量更新**:保留文件中已有的封面/歌词等帧,只覆盖本次提供的字段(此前整表重建会抹掉)。
+- FLAC/MP4 同样支持增量语义(仅覆盖提供的键)。
+
 ## 1.8.0 - 2026-08-28
 
 - **下载文件布局四选一**(面板设置):按专辑分类(原"归档",默认)/ 按歌手分类 / 歌曲平铺 / 按歌单分文件夹;旧配置值 `archive` 自动兼容为按专辑。
