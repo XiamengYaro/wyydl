@@ -32,8 +32,12 @@ _UPGRADE_TTL = 3600  # 升级检查 1 小时缓存,避免 GitHub API 限频
 
 
 def _ver_tuple(v: str) -> tuple:
-    nums = re.findall(r"\d+", str(v).lstrip("v"))
-    return tuple(int(x) for x in nums[:3]) or (0, 0, 0)
+    """语义化版本 → 可比较元组 (major, minor, patch, 是否预发布)。
+    预发布(如 1.12.0-beta.1)低于同版本正式版。"""
+    m = re.match(r"v?(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(?:\+.*)?$", str(v).strip())
+    if not m:
+        return (0, 0, 0, 1)
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), 0 if m.group(4) else 1)
 
 
 @dataclass

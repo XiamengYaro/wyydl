@@ -265,6 +265,13 @@ ok("MP3 标题/歌手/音轨", _tags["TIT2"].text[0] == "全量曲" and _tags["T
 ok("MP3 封面内嵌", bool(_tags.getall("APIC")) and _tags.getall("APIC")[0].data == b"\xff\xd8\xff\xe0FAKEJPEG")
 ok("MP3 歌词内嵌", bool(_tags.getall("USLT")))
 
+# ---- 语义化版本比较 ----
+from wyydl.web import _ver_tuple as _vt  # noqa: E402
+
+ok("SemVer 比较", _vt("1.11.0") > _vt("1.10.9") and _vt("2.0.0") > _vt("1.99.99"))
+ok("SemVer 预发布低于正式版", _vt("1.12.0") > _vt("1.12.0-beta.1")
+   and _vt("1.0.0-alpha") < _vt("1.0.0") and _vt("1.12.0-rc.2") > _vt("1.12.0-rc.1"))
+
 # ---- Web 面板 ----
 from wyydl.web import AppContext, create_app  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

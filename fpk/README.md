@@ -45,7 +45,7 @@ fpk/
 
 ## 版本规范
 
-当前版本 **1.0.0**。普通修改 +0.0.1,功能更新 +0.1(→1.1.0),特别更新 +1.0(→2.0.0)。发版时同步修改 `manifest` 的 `version` 与 `sync/wyydl/__init__.py` 的 `__version__`,并更新根目录 `CHANGELOG.md` 与 manifest 的 `changelog` 字段。
+遵循**语义化版本(SemVer)** `主.次.修`:主版本 = 不兼容破坏性变更;次版本 = 向后兼容的新功能;修订 = 向后兼容的缺陷修复;预发布用 `-alpha/-beta/-rc.N` 且低于正式版。发版时同步修改 `manifest` 的 `version` 与 `sync/wyydl/__init__.py` 的 `__version__`,并更新根目录 `CHANGELOG.md` 与 manifest 的 `changelog` 字段。
 
 ## 构建(开发机)
 

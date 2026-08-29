@@ -277,7 +277,7 @@ sudo systemctl restart docker
 
 ## 🏷️ 版本规范
 
-当前版本见 [CHANGELOG.md](CHANGELOG.md):普通修改 +0.0.1,功能更新 +0.1,特别更新 +1.0。发版时同步 `fpk/manifest` 与 `sync/wyydl/__init__.py` 的版本号,推 `v*` 标签自动构建发布。
+遵循**语义化版本(SemVer)** `主.次.修`:主版本 = 不兼容破坏性变更;次版本 = 向后兼容的新功能;修订 = 向后兼容的缺陷修复;预发布用 `-alpha/-beta/-rc.N` 且低于正式版。当前版本见 [CHANGELOG.md](CHANGELOG.md)。发版时同步 `fpk/manifest` 与 `sync/wyydl/__init__.py` 的版本号,推 `v*` 标签自动构建发布(CI 校验标签语义化版本与版本一致性)。
 
 ## 📄 许可证与致谢
 

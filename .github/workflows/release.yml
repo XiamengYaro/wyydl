@@ -40,6 +40,8 @@ jobs:
           TAG="${GITHUB_REF_NAME#v}"
           MANIFEST_VERSION=$(grep -E '^version' fpk/manifest | head -1 | awk -F= '{print $2}' | tr -d ' ')
           echo "tag=$TAG manifest=$MANIFEST_VERSION"
+          echo "$TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
+            || { echo "错误:标签 $TAG 不是合法语义化版本(SemVer)"; exit 1; }
           [ "$TAG" = "$MANIFEST_VERSION" ] || { echo "错误:标签 v$TAG 与 manifest 版本 $MANIFEST_VERSION 不一致"; exit 1; }
 
       - name: 运行冒烟测试
