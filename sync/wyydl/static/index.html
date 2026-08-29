@@ -71,6 +71,12 @@
   dialog{background:var(--card);color:var(--text);border:1px solid var(--line);
     border-radius:12px;padding:22px;max-width:600px;width:94vw}
   dialog::backdrop{background:rgba(0,0,0,.6)}
+  #toastBox{position:fixed;top:70px;right:18px;z-index:99;display:grid;gap:8px;max-width:340px}
+  .toast{background:#1c222e;border:1px solid var(--line);border-left:3px solid #7aa7e8;border-radius:8px;
+    padding:9px 13px;font-size:13px;color:var(--text);box-shadow:0 6px 18px rgba(0,0,0,.35);
+    animation:toastIn .18s ease;white-space:pre-wrap;word-break:break-all}
+  .toast.ok{border-left-color:var(--ok)}.toast.err{border-left-color:var(--err)}.toast.warn{border-left-color:var(--warn)}
+  @keyframes toastIn{from{transform:translateX(20px);opacity:0}to{transform:none;opacity:1}}
   #qrimg{width:230px;height:230px;background:#fff;border-radius:8px;display:block;margin:12px auto}
   #tracks td:first-child{color:var(--dim);width:34px}
   .stat-num{font-size:22px;font-weight:600}
@@ -259,6 +265,7 @@
   <div id="dlgBody"></div>
   <div style="text-align:right;margin-top:14px"><button class="btn" onclick="dlg.close()">关闭</button></div>
 </dialog>
+<div id="toastBox"></div>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -279,6 +286,19 @@ async function api(path, opt = {}) {
 }
 
 function esc(s){return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+/* ---------- 统一提示 ---------- */
+function toast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  $('#toastBox').appendChild(el);
+  setTimeout(() => el.remove(), 4500);
+}
+function confirmDo(question, fn) {  // 确认后执行
+  if (!confirm(question)) return;
+  fn();
+}
 
 /* ---------- 状态轮询 ---------- */
 async function refreshStatus() {
@@ -420,30 +440,40 @@ function collectSettings() {
     web_token: $('#sToken').value.trim(),
   };
 }
-$('#btnSaveSettings').onclick = async () => {
+$('#btnSaveSettings').onclick = () => confirmDo('确定保存设置并立即生效吗?', async () => {
   try {
     await api('/api/settings', {method: 'PUT', body: collectSettings()});
-    alert('设置已保存并生效'); refreshStatus();
-  } catch (e) { alert(e.message); }
-};
+    toast('设置已保存并生效', 'ok'); refreshStatus();
+  } catch (e) { toast(e.message, 'err'); }
+});
 
 /* ---------- 动作 ---------- */
-async function syncOne(id) { await api('/api/sync', {method: 'POST', body: {playlists: [id]}}); refreshStatus(); }
-$('#btnSync').onclick = async () => { try { await api('/api/sync', {method: 'POST', body: {}}); } catch(e){ alert(e.message); } refreshStatus(); };
-$('#btnAdd').onclick = async () => {
-  try {
-    const r = await api('/api/playlists', {method: 'POST', body: {id: $('#plId').value, name: $('#plName').value}});
-    $('#plId').value = ''; $('#plName').value = ''; refreshStatus();
-    if (!r.sync_started) alert('已添加。当前有任务在运行,该歌单将在下一轮(或手动触发时)同步。');
-  } catch (e) { alert(e.message); }
+function syncOne(id) { confirmDo('立即同步该歌单?', async () => {
+  try { await api('/api/sync', {method: 'POST', body: {playlists: [id]}}); toast('已开始同步该歌单', 'ok'); refreshStatus(); }
+  catch (e) { toast(e.message, 'err'); }
+}); }
+$('#btnSync').onclick = () => confirmDo('立即同步所有已配置目标?', async () => {
+  try { await api('/api/sync', {method: 'POST', body: {}}); toast('已开始同步', 'ok'); refreshStatus(); }
+  catch (e) { toast(e.message, 'err'); }
+});
+$('#btnAdd').onclick = () => {
+  const id = $('#plId').value.trim();
+  if (!id) return toast('请先输入歌单 ID', 'warn');
+  confirmDo(`添加歌单 ${id} 并立即开始同步吗?`, async () => {
+    try {
+      const r = await api('/api/playlists', {method: 'POST', body: {id, name: $('#plName').value}});
+      $('#plId').value = ''; $('#plName').value = ''; refreshStatus();
+      toast(r.sync_started ? '已添加并开始同步' : '已添加,当前有任务在运行,稍后自动同步', 'ok');
+    } catch (e) { toast(e.message, 'err'); }
+  });
 };
-$('#btnAddSrc').onclick = async () => {
+$('#btnAddSrc').onclick = () => confirmDo('添加该特殊来源并立即开始同步吗?', async () => {
   try {
     const r = await api('/api/playlists', {method: 'POST', body: {source: $('#srcSel').value}});
     refreshStatus();
-    if (!r.sync_started) alert('已添加。当前有任务在运行,稍后自动同步。');
-  } catch (e) { alert(e.message); }
-};
+    toast(r.sync_started ? '已添加并开始同步' : '已添加,当前有任务在运行,稍后自动同步', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+});
 $('#btnAcc').onclick = async () => {
   showDialog('<h2 style="margin:0 0 10px">账号歌单</h2><p class="muted" id="accMsg">获取中…</p>'
     + '<div id="accList" style="max-height:55vh;overflow:auto;margin-top:8px"></div>');
@@ -458,31 +488,35 @@ $('#btnAcc').onclick = async () => {
       </div>`).join('');
   } catch (e) { $('#accMsg').textContent = '获取失败:' + e.message; }
 };
-async function addFromAcc(id, btn) {
-  try {
-    const r = await api('/api/playlists', {method: 'POST', body: {id: String(id)}});
-    btn.outerHTML = '<span class="tag ok">已添加</span>';
-    refreshStatus();
-    if (!r.sync_started) alert('已添加。当前有任务在运行,该歌单将在下一轮同步。');
-  } catch (e) { alert(e.message); }
+function addFromAcc(id, btn) {
+  confirmDo('添加该歌单并立即开始同步吗?', async () => {
+    try {
+      const r = await api('/api/playlists', {method: 'POST', body: {id: String(id)}});
+      btn.outerHTML = '<span class="tag ok">已添加</span>';
+      refreshStatus();
+      toast(r.sync_started ? '已添加并开始同步' : '已添加,当前有任务在运行,稍后自动同步', 'ok');
+    } catch (e) { toast(e.message, 'err'); }
+  });
 }
-async function removePl(id) {
-  if (!confirm('确定从同步列表移除该歌单?(本地文件保留)')) return;
-  await api('/api/playlists/' + id, {method: 'DELETE'}); refreshStatus();
+function removePl(id) {
+  confirmDo('确定从同步列表移除该歌单?(本地文件保留)', async () => {
+    try { await api('/api/playlists/' + id, {method: 'DELETE'}); toast('已移除', 'ok'); refreshStatus(); }
+    catch (e) { toast(e.message, 'err'); }
+  });
 }
 $('#btnLog').onclick = refreshLogs;
-$('#btnSave').onclick = async () => {
+$('#btnSave').onclick = () => confirmDo('确定应用这份 YAML 配置并生效吗?', async () => {
   try {
     await api('/api/config', {method: 'PUT', body: {content: $('#cfgText').value}});
-    alert('已保存并生效'); refreshStatus(); loadSettings();
-  } catch (e) { alert(e.message); }
-};
-$('#btnNotify').onclick = async () => {
+    toast('配置已应用并生效', 'ok'); refreshStatus(); loadSettings();
+  } catch (e) { toast(e.message, 'err'); }
+});
+$('#btnNotify').onclick = () => confirmDo('保存当前设置并发送测试通知?', async () => {
   try {  // 先存再测,保证测的是当前填写内容
     await api('/api/settings', {method: 'PUT', body: collectSettings()});
-    await api('/api/notify/test', {method: 'POST'}); alert('已发送,请到飞书群查看');
-  } catch (e) { alert(e.message); }
-};
+    await api('/api/notify/test', {method: 'POST'}); toast('测试通知已发送,请到群里查看', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+});
 
 /* ---------- 弹窗 ---------- */
 const dlg = $('#dlg');
@@ -503,7 +537,7 @@ async function viewTracks(id, name) {
 async function startQr() {
   let d;
   try { d = await api('/api/login/qr', {method: 'POST'}); }
-  catch (e) { $('#btnLogin').disabled = false; return alert('生成二维码失败:' + e.message); }
+  catch (e) { $('#btnLogin').disabled = false; return toast('生成二维码失败:' + e.message, 'err'); }
   if (pollTimer) clearInterval(pollTimer);
   showDialog(`<h2 style="margin:0 0 6px">扫码登录</h2>
     <p class="muted">打开手机网易云音乐 App 扫一扫,并在手机上确认登录。二维码过期可点「重新生成」。</p>
@@ -539,7 +573,7 @@ async function loadLocal() {
     const { files } = await api('/api/local/files');
     localFiles = files;
     renderLocal();
-  } catch (e) { alert(e.message); }
+  } catch (e) { toast(e.message, 'err'); }
 }
 function renderLocal() {
   const only = $('#onlyMissing').checked;
@@ -561,13 +595,15 @@ function renderLocal() {
       </td>
     </tr>`).join('') || '<tr><td colspan="5" class="muted">列表为空</td></tr>';
 }
-async function refetchFile(i) {
+function refetchFile(i) {
   const f = localFiles[i];
-  try {
-    const r = await api('/api/local/refetch', {method: 'POST', body: {path: f.path}});
-    alert(`已重新刮削:${r.artist} - ${r.title}` + (r.warns && r.warns.length ? `\n提示:${r.warns.join('、')}` : ''));
-    loadLocal();
-  } catch (e) { alert(e.message); }
+  confirmDo('重新刮削「' + (f.title || f.name) + '」?会重写标签/封面/歌词/NFO', async () => {
+    try {
+      const r = await api('/api/local/refetch', {method: 'POST', body: {path: f.path}});
+      toast(`已重新刮削:${r.artist} - ${r.title}` + (r.warns && r.warns.length ? `\n提示:${r.warns.join('、')}` : ''), 'ok');
+      loadLocal();
+    } catch (e) { toast(e.message, 'err'); }
+  });
 }
 async function openMatch(i) {
   const f = localFiles[i];
@@ -599,9 +635,9 @@ async function doSearch(kw) {
 async function pickMatch(sid, name) {
   try {
     const r = await api('/api/local/match', {method: 'POST', body: {sid, path: currentMatchPath}});
-    alert(`已匹配:${r.artist} - ${r.title}` + (r.warns && r.warns.length ? `\n提示:${r.warns.join('、')}` : ''));
+    toast(`已匹配:${r.artist} - ${r.title}` + (r.warns && r.warns.length ? `\n提示:${r.warns.join('、')}` : ''), 'ok');
     dlg.close(); loadLocal();
-  } catch (e) { alert(e.message); }
+  } catch (e) { toast(e.message, 'err'); }
 }
 function openEdit(i) {
   const f = localFiles[i];
@@ -616,15 +652,17 @@ function openEdit(i) {
       <button class="btn mini primary" onclick="saveEdit(${i})">保存</button>
     </div>`);
 }
-async function saveEdit(i) {
+function saveEdit(i) {
   const f = localFiles[i];
-  try {
-    const r = await api('/api/local/edit', {method: 'PUT', body: {
-      path: f.path, title: $('#eTitle').value, artist: $('#eArtist').value,
-      album: $('#eAlbum').value, track: +$('#eTrack').value || 0}});
-    alert(`已保存:${r.artist} - ${r.title}` + (r.warns && r.warns.length ? `\n提示:${r.warns.join('、')}` : ''));
-    dlg.close(); loadLocal();
-  } catch (e) { alert(e.message); }
+  confirmDo('确定写入这些信息到「' + (f.title || f.name) + '」?', async () => {
+    try {
+      const r = await api('/api/local/edit', {method: 'PUT', body: {
+        path: f.path, title: $('#eTitle').value, artist: $('#eArtist').value,
+        album: $('#eAlbum').value, track: +$('#eTrack').value || 0}});
+      toast(`已保存:${r.artist} - ${r.title}` + (r.warns && r.warns.length ? `\n提示:${r.warns.join('、')}` : ''), 'ok');
+      dlg.close(); loadLocal();
+    } catch (e) { toast(e.message, 'err'); }
+  });
 }
 
 async function checkUpgrade() {
