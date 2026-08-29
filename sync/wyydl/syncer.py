@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import re
+import shutil
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -11,12 +12,16 @@ from pathlib import Path
 
 import httpx
 
-from . import downloader, nfo, notify, quality, tagger
+from . import downloader, nfo, notify, quality, tagger, yrc
 from .api import ApiError, LoginExpired, NcmApi
 from .config import DB_DIR, MUSIC_DIR, Config
 from .state import State
 
 log = logging.getLogger("wyydl.sync")
+
+# 特殊来源的合成歌单 id(负值,避免与真实歌单 id 冲突)
+SOURCE_PID = {"cloud": -1, "daily": -2, "fm": -3}
+SOURCE_NAME = {"cloud": "云盘", "daily": "每日推荐", "fm": "私人FM"}
 
 
 def now_str() -> str:
@@ -98,21 +103,36 @@ class SyncEngine:
         targets = list(cfg.d.get("playlists") or [])
         if playlist_ids:
             want = {int(x) for x in playlist_ids}
-            targets = [p for p in targets if int(p.get("id", -1)) in want] \
-                or [{"id": i, "name": ""} for i in want]
+            if any(w < 0 for w in want):  # 负数 = 特殊源
+                targets = [p for p in targets if SOURCE_PID.get(p.get("source")) in want]
+            else:
+                targets = [p for p in targets if int(p.get("id", -1)) in want] \
+                    or [{"id": i, "name": ""} for i in want]
         if not targets:
             log.info("未配置任何歌单,本轮结束")
             return
 
-        # 1) 拉取歌单曲目(先记录旧成员表用于删除统计)
+        # 1) 拉取目标曲目(普通歌单 + 特殊源;先记录旧成员表用于删除统计)
         desired: dict[int, list[dict]] = {}
         prev_members: dict[int, set[int]] = {}
         for p in targets:
-            pid = int(p["id"])
-            self._set_progress("拉取歌单", str(p.get("name") or pid))
-            pl = self.api.playlist_detail(pid)
-            name = str(p.get("name") or pl.get("name") or pid)
-            tracks = self.api.playlist_tracks(pid, pl=pl)
+            source = str(p.get("source") or "playlist")
+            if source in SOURCE_PID:
+                pid = SOURCE_PID[source]
+                name = SOURCE_NAME[source]
+                self._set_progress("拉取歌单", name)
+                try:
+                    ids = self._fetch_source(source)
+                except ApiError as e:
+                    log.warning("特殊源[%s]拉取失败:%s", name, e)
+                    ids = []
+                tracks = [{"id": i} for i in ids]
+            else:
+                pid = int(p["id"])
+                self._set_progress("拉取歌单", str(p.get("name") or pid))
+                pl = self.api.playlist_detail(pid)
+                name = str(p.get("name") or pl.get("name") or pid)
+                tracks = self.api.playlist_tracks(pid, pl=pl)
             prev_members[pid] = {sid for sid, _ in self.state.playlist_songs(pid)}
             desired[pid] = tracks
             self.state.upsert_playlist(pid, name, len(tracks), last_sync=now_str())
@@ -138,29 +158,90 @@ class SyncEngine:
                                    album=str((d.get("al") or {}).get("name") or "未知专辑"),
                                    track_no=int(d.get("no") or 0))
 
-        # 3) 计划下载
+        # 3) 计划下载(失败退避:连续失败>=3 且 24h 内不再重试;单轮上限截断)
         chain = cfg.quality_chain
         upgrade_on = bool(cfg.d["quality"].get("upgrade_existing", True))
         tasks: list[tuple[int, str, str]] = []  # (sid, level, kind)
+        now = _dt.datetime.now()
         for sid in all_ids:
             row = self.state.song(sid)
             lvl = quality.pick_level((details.get(sid) or {}).get("privilege"), chain)
             has_file = bool(row and row["status"] == "ok" and row["file_path"]
                             and Path(row["file_path"]).exists())
-            if not has_file:
-                tasks.append((sid, lvl, "new"))
-            elif upgrade_on and quality.rank(lvl) > quality.rank(row["level"]):
-                tasks.append((sid, lvl, "upgrade"))
+            if has_file:
+                if upgrade_on and quality.rank(lvl) > quality.rank(row["level"]):
+                    tasks.append((sid, lvl, "upgrade"))
+                continue
+            if row and int(row.get("fail_count") or 0) >= 3 and row.get("downloaded_at"):
+                try:
+                    last = _dt.datetime.strptime(row["downloaded_at"], "%Y-%m-%d %H:%M:%S")
+                    if (now - last).total_seconds() < 86400:
+                        continue  # 退避中,下轮再试
+                except ValueError:
+                    pass
+            tasks.append((sid, lvl, "new"))
+        limit = int(cfg.d["limits"].get("max_per_run") or 0)
+        if limit > 0 and len(tasks) > limit:
+            log.info("单轮上限 %d 首,本轮截断 %d 首,余量下轮继续", limit, len(tasks) - limit)
+            tasks = tasks[:limit]
         summary["added"] = sum(1 for _, _, k in tasks if k == "new")
         summary["upgraded"] = sum(1 for _, _, k in tasks if k == "upgrade")
         log.info("待下载 %d(新增 %d / 升级 %d)", len(tasks), summary["added"], summary["upgraded"])
 
+        # 4) 磁盘空间预检
+        if tasks and not self._disk_ok():
+            summary["status"] = "disk_full"
+            summary["error"] = "磁盘剩余空间低于 min_free_space 阈值,本轮跳过下载"
+            log.warning("%s", summary["error"])
+            tasks = []
         if tasks:
             self._download_all(tasks, details, summary)
 
-        # 5) 导出 m3u8 与删除处理        self._set_progress("整理输出", "")
+        # 5) 导出 m3u8、删除处理、回收目录清理
+        self._set_progress("整理输出", "")
         self._export_m3u8()
         summary["removed"] = self._cleanup_missing(desired, prev_members)
+        self._cleanup_trash()
+
+    def _fetch_source(self, source: str) -> list[int]:
+        if source == "cloud":
+            return self.api.user_cloud()
+        if source == "daily":
+            return self.api.recommend_songs()
+        if source == "fm":
+            return self.api.personal_fm()
+        return []
+
+    def _disk_ok(self) -> bool:
+        try:
+            free_gb = shutil.disk_usage(self._music_root()).free / (1024 ** 3)
+            threshold = float(self.cfg.d["limits"].get("min_free_space") or 2)
+            return free_gb >= threshold
+        except OSError:
+            return True
+
+    def _cleanup_trash(self) -> None:
+        """清理 _trash 中超过保留期的文件。"""
+        days = int(self.cfg.d.get("trash_retention_days") or 30)
+        if days <= 0:
+            return
+        trash = self._music_root() / "_trash"
+        if not trash.is_dir():
+            return
+        cutoff = time.time() - days * 86400
+        for p in trash.iterdir():
+            try:
+                if p.is_file() and p.stat().st_mtime < cutoff:
+                    p.unlink(missing_ok=True)
+                    log.info("清理回收文件:%s", p.name)
+            except OSError:
+                pass
+
+    def _note_fail(self, sid: int) -> None:
+        """整首下载失败:失败计数 +1(供 24h 退避),记录尝试时间。"""
+        row = self.state.song(sid) or {}
+        self.state.upsert_song(sid=sid, fail_count=int(row.get("fail_count") or 0) + 1,
+                               downloaded_at=now_str())
 
     # ---------- 歌单元数据 ----------
     def _membership(self, all_ids: list[int]) -> dict[int, tuple[str, int]]:
@@ -223,10 +304,10 @@ class SyncEngine:
         done = 0
         pool = ThreadPoolExecutor(max_workers=conc)
         try:
-            futs = [
-                pool.submit(self._download_one, sid, lvl, kind_of[sid], details.get(sid) or {})
+            futs = {
+                pool.submit(self._download_one, sid, lvl, kind_of[sid], details.get(sid) or {}): sid
                 for sid, lvl, kind in tasks
-            ]
+            }
             for fut in as_completed(futs):
                 done += 1
                 try:
@@ -250,6 +331,7 @@ class SyncEngine:
                 else:
                     summary["failed"] += 1
                     summary["failures"].append(r)
+                    self._note_fail(futs[fut])  # 失败计数,供 24h 退避
                     log.warning("失败 %s - %s:%s", r.get("artist"), r.get("title"), r.get("reason"))
         finally:
             pool.shutdown(wait=True)
@@ -260,6 +342,17 @@ class SyncEngine:
             a["downloaded"] = downloaded
             if total:
                 a["total"] = total
+
+    def _fetch_lyric(self, sid: int) -> tuple[str, bool]:
+        """返回 (歌词文本, 是否成功)。yrc 开启时优先逐字歌词,失败回退普通歌词。"""
+        if self.cfg.d["lyrics"].get("yrc"):
+            y = self.api.lyric_new(sid)
+            if y:
+                return yrc.yrc_to_lrc(y), True
+        lr = self.api.lyric(sid)
+        if lr is None:
+            return "", False
+        return lr, True
 
     def _download_one(self, sid: int, want_level: str, kind: str, detail: dict) -> dict:
         members = self._membership([sid])
@@ -290,7 +383,8 @@ class SyncEngine:
                 try:
                     tmp, md5hex, size = downloader.download(
                         entry["url"], self.tmp_dir,
-                        progress=lambda dn, dt: self._dl_tick(sid, dn, dt))
+                        progress=lambda dn, dt: self._dl_tick(sid, dn, dt),
+                        proxy=self.cfg.d["limits"].get("proxy") or None)
                     break
                 finally:
                     self.active.pop(sid, None)
@@ -321,11 +415,9 @@ class SyncEngine:
         warns: list[str] = []
         lrc = ""
         if self.cfg.d["lyrics"].get("lrc", True) or self.cfg.d["lyrics"].get("embed", True):
-            lrc_res = self.api.lyric(sid)  # None=获取失败
-            if lrc_res is None:
+            lrc, lrc_ok = self._fetch_lyric(sid)
+            if not lrc_ok:
                 warns.append("歌词获取失败")
-            else:
-                lrc = lrc_res
         al_pic = ((detail or {}).get("al") or {}).get("picUrl")
         cover = self._cover_for(detail) if al_pic else None
         if al_pic and cover is None:
@@ -348,7 +440,7 @@ class SyncEngine:
             file_path=str(final), ext=ext, track_no=int(meta.get("track") or 0),
             level=str(entry.get("level") or want_level),
             br=int(entry.get("br") or 0), size=size, md5=md5hex,
-            downloaded_at=now_str(), status="ok",
+            downloaded_at=now_str(), status="ok", fail_count=0,
         )
         if self.cfg.d.get("nfo", True):
             try:
@@ -529,11 +621,10 @@ class SyncEngine:
         moved = final != p
 
         lrc = ""
-        lr = self.api.lyric(sid)
-        if lr is None:
-            warns.append("歌词获取失败")
-        else:
-            lrc = lr
+        if self.cfg.d["lyrics"].get("lrc", True) or self.cfg.d["lyrics"].get("embed", True):
+            lrc, lrc_ok = self._fetch_lyric(sid)
+            if not lrc_ok:
+                warns.append("歌词获取失败")
         al_pic = ((detail or {}).get("al") or {}).get("picUrl")
         cover = self._cover_for(detail) if al_pic else None
         if al_pic and cover is None:
@@ -561,7 +652,7 @@ class SyncEngine:
             sid=sid, title=meta["title"], artist=meta["artist"], album=meta["album"],
             file_path=str(final), ext=final.suffix.lstrip(".").lower() or "mp3",
             track_no=int(meta.get("track") or 0), level="manual",
-            downloaded_at=now_str(), status="ok",
+            downloaded_at=now_str(), status="ok", fail_count=0,
         )
         if lrc and self.cfg.d["lyrics"].get("lrc", True):
             try:
@@ -573,6 +664,10 @@ class SyncEngine:
                 self._write_nfo(final, meta, detail)
             except Exception:
                 warns.append("NFO 写入失败")
+        try:  # 刮削/匹配/编辑后即时刷新歌单 m3u8
+            self._export_m3u8()
+        except Exception:
+            pass
         log.info("[scrape] %s - %s <- %s", meta["artist"], meta["title"], final.name)
         return {"ok": True, "title": meta["title"], "artist": meta["artist"],
                 "path": str(final), "warns": warns}
@@ -669,9 +764,12 @@ class SyncEngine:
 
     # ---------- 输出整理 ----------
     def _export_m3u8(self) -> None:
+        allowed = set(self.cfg.playlist_ids())
+        allowed |= {SOURCE_PID[e["source"]] for e in (self.cfg.d.get("playlists") or [])
+                    if e.get("source") in SOURCE_PID}
         for pl in self.state.playlists():
             pid = pl["pid"]
-            if pid not in self.cfg.playlist_ids():
+            if pid not in allowed:
                 continue
             lines = ["#EXTM3U"]
             for sid, _pos in self.state.playlist_songs(pid):
@@ -694,6 +792,8 @@ class SyncEngine:
         for ts in desired.values():
             still_wanted |= {int(t["id"]) for t in ts if t.get("id")}
         for pid, prev in prev_members.items():
+            if pid < 0:
+                continue  # 特殊源(云盘/日推/私人FM)成员是快照,不做删除/镜像处理
             now = {int(t["id"]) for t in desired.get(pid, []) if t.get("id")}
             gone = prev - now
             removed += len(gone)

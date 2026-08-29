@@ -12,6 +12,27 @@
 
 同步位置:`fpk/manifest` 的 `version` 与 `sync/wyydl/__init__.py` 的 `__version__` 必须一致,并在本文件追加条目、更新 `fpk/manifest` 的 `changelog`。
 
+## 1.10.0 - 2026-08-29
+
+### 工程健壮性
+- `sync/.dockerignore`:构建上下文排除本地数据/测试/缓存。
+- 依赖锁定为 `==`(实测版本)。
+- CI 推送 Docker 镜像到 **GHCR**(`ghcr.io/xiamengyaro/wyydl-sync`,多架构 amd64/arm64,`v*` + `latest`);通用 Compose 支持 `image:` 二选一。
+- `limits.max_per_run`:单轮下载上限,超出下轮继续。
+- 失败退避:`songs.fail_count` 累计,连续失败 ≥3 且 24h 内不再重试(成功清零)。
+
+### 面板体验
+- 本地音乐列表支持搜索(标题/歌手/专辑/文件名)过滤。
+- 手动匹配/重新刮削/编辑后**即时刷新歌单 m3u8**。
+- `trash_retention_days`(默认 30):回收目录自动清理。
+- 磁盘空间提示:下载前检查剩余空间(`min_free_space`,默认 2GB),面板显示可用/总量。
+- 面板新版本检测:GitHub 有新 Release 时顶栏提示。
+
+### 数据来源与下载
+- 特殊源:云盘(`/user/cloud`)、每日推荐(`/recommend/songs`)、私人 FM(`/personal_fm`),面板一键添加,自动去重,各自生成 m3u8。
+- 逐字歌词:`lyrics.yrc` 开启时优先 `/lyric/new`,自动转 LRC,失败回退普通歌词。
+- 代理下载:`limits.proxy` 可选,仅作用于 CDN 下载请求。
+
 ## 1.9.1 - 2026-08-29
 
 - **修复下载中出现的 CDN 403**:网易 CDN 取流链接是带时效签名的(约数分钟有效),此前批量预取会让链接在排队中过期,下载时报 403 Forbidden。现改为**流地址在下载任务内即时获取**(取到立刻用),并对 403/410 **自动重取一次新链接重试**。

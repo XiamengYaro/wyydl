@@ -2,11 +2,15 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]          # 推送 v* 标签 → 测试 + 打包 + 发布 Release
+    tags: ["v*"]          # 推送 v* 标签 → 测试 + 打包 fpk + 构建镜像 + 发布 Release
   workflow_dispatch:       # 也允许手动触发(仅测试+打包,不发布)
 
 permissions:
   contents: write
+  packages: write          # 推送 GHCR 镜像
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/wyydl-sync
 
 jobs:
   release:
@@ -39,6 +43,18 @@ jobs:
 
       - name: 打包 fpk
         run: ./fpk/build.sh
+
+      - name: 构建并推送 Docker 镜像(GHCR,多架构)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: docker/build-push-action@v6
+        with:
+          context: ./sync
+          file: ./sync/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.ref_name }}
+            ${{ env.IMAGE }}:latest
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4

@@ -1,7 +1,7 @@
-httpx>=0.27
-mutagen>=1.47
-qrcode>=7.4
-apscheduler>=3.10,<4
-fastapi>=0.110
-uvicorn>=0.29
-pyyaml>=6.0
+httpx==0.28.1
+mutagen==1.47.0
+qrcode==8.2
+APScheduler==3.11.3
+fastapi==0.128.8
+uvicorn==0.39.0
+PyYAML==6.0.3

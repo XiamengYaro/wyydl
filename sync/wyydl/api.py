@@ -229,6 +229,38 @@ class NcmApi:
             return None
         return str((d.get("lrc") or {}).get("lyric") or "")
 
+    def lyric_new(self, sid: int) -> str | None:
+        """逐字歌词(yrc)原文;None 表示获取失败或无逐字。"""
+        try:
+            d = self.get("/lyric/new", id=sid)
+        except ApiError:
+            return None
+        return str((d.get("yrc") or {}).get("lyric") or "")
+
+    # ---- 特殊来源(云盘/每日推荐/私人FM) ----
+    def user_cloud(self) -> list[int]:
+        """云盘歌曲 ID(自动翻页)。"""
+        out: list[int] = []
+        offset = 0
+        while True:
+            d = self.get("/user/cloud", limit=200, offset=offset)
+            data = d.get("data") or []
+            out += [int(x["songId"]) for x in data if x.get("songId")]
+            offset += len(data)
+            if len(data) < 200:
+                break
+        return out
+
+    def recommend_songs(self) -> list[int]:
+        """每日推荐歌曲 ID。"""
+        d = self.get("/recommend/songs")
+        return [int(s["id"]) for s in (d.get("data") or {}).get("dailySongs") or [] if s.get("id")]
+
+    def personal_fm(self) -> list[int]:
+        """私人 FM 歌曲 ID。"""
+        d = self.get("/personal_fm")
+        return [int(s["id"]) for s in (d.get("data") or []) if s.get("id")]
+
     def album(self, aid: int) -> dict:
         """专辑详情(流派/厂牌/发行时间/简介),供 NFO 使用。"""
         return self.get("/album", id=aid)

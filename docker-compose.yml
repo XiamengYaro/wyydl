@@ -1,5 +1,8 @@
-# 网易云歌单同步 - fnOS 部署
-# 用法:fnOS Docker「项目/Compose」指向本文件,或 SSH: docker compose up -d --build
+# 网易云歌单同步 - 通用 Docker 部署
+# 用法:docker compose up -d --build
+# 说明:wyydl-sync 可二选一 ——
+#   1) 拉取预构建镜像(推荐):保留下面 image: 行,注释掉 build: 行;
+#   2) 本地构建镜像:注释掉 image: 行,保留 build: 行(需联网 pypi)。
 services:
   ncm-api:
     image: moefurina/ncm-api:latest
@@ -21,7 +24,8 @@ services:
     networks: [wyydl]
 
   wyydl-sync:
-    build: ./sync
+    image: ghcr.io/xiamengyaro/wyydl-sync:latest
+    build: ./sync              # 二选一:用预构建镜像时注释此行
     container_name: wyydl-sync
     restart: unless-stopped
     depends_on: [ncm-api]
@@ -31,10 +35,10 @@ services:
     ports:
       - "8286:8286"             # Web 控制面板
     volumes:
-      - /vol1/appdata/wyydl/config:/config
-      - /vol1/appdata/wyydl/db:/db
-      - /vol1/appdata/wyydl/logs:/logs
-      - /vol1/media/music:/music
+      - ./config:/config
+      - ./db:/db
+      - ./logs:/logs
+      - ./music:/music
     networks: [wyydl]
 
 networks:

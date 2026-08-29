@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS runs(
 """
 
 _SONG_FIELDS = ("sid", "title", "artist", "album", "file_path", "ext", "track_no",
-                "level", "br", "size", "md5", "downloaded_at", "status")
+                "level", "br", "size", "md5", "downloaded_at", "status", "fail_count")
 
 
 def _rows_to_dicts(cur: sqlite3.Cursor) -> list[dict]:
@@ -60,10 +60,12 @@ class State:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
-            try:  # 旧库迁移:补充音轨号列
-                self._conn.execute("ALTER TABLE songs ADD COLUMN track_no INTEGER NOT NULL DEFAULT 0")
-            except sqlite3.OperationalError:
-                pass  # 列已存在
+            for col in ("track_no INTEGER NOT NULL DEFAULT 0",
+                        "fail_count INTEGER NOT NULL DEFAULT 0"):
+                try:  # 旧库迁移:补充列
+                    self._conn.execute(f"ALTER TABLE songs ADD COLUMN {col}")
+                except sqlite3.OperationalError:
+                    pass  # 列已存在
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.commit()
 
@@ -127,7 +129,7 @@ class State:
 
     def upsert_song(self, **kw) -> None:
         sid = int(kw["sid"])
-        row = self.song(sid) or {f: (0 if f in ("br", "size", "track_no") else "") for f in _SONG_FIELDS}
+        row = self.song(sid) or {f: (0 if f in ("br", "size", "track_no", "fail_count") else "") for f in _SONG_FIELDS}
         row["sid"] = sid
         for f in _SONG_FIELDS:
             v = kw.get(f)

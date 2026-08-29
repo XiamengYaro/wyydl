@@ -87,6 +87,7 @@
   <span class="chip">下次运行 <b id="nextRun">-</b></span>
   <span class="chip">计划 <b id="cronTxt">-</b></span>
   <span class="chip">布局 <b id="layoutTxt">-</b></span>
+  <a id="newVer" href="https://github.com/XiamengYaro/wyydl/releases" target="_blank" style="display:none" class="chip" title="前往 Releases 下载新版本">🆕 新版本可用</a>
   <span style="flex:1"></span>
   <button class="btn primary" id="btnSync">立即同步</button>
   <button class="btn" id="btnLogin">扫码登录</button>
@@ -106,12 +107,18 @@
   </section>
 
   <section class="card">
-    <h2>歌单</h2>
+    <h2>歌单 <span class="muted" id="diskInfo" style="font-size:12px;font-weight:400"></span></h2>
     <div class="inline" style="margin-bottom:12px">
       <input type="text" id="plId" placeholder="歌单 ID(网页版歌单地址里的数字)">
       <input type="text" id="plName" placeholder="自定义名称(可空)" style="max-width:200px">
       <button class="btn" id="btnAdd">添加</button>
       <button class="btn" id="btnAcc">账号歌单</button>
+      <select id="srcSel" style="max-width:150px;width:auto">
+        <option value="cloud">云盘</option>
+        <option value="daily">每日推荐</option>
+        <option value="fm">私人 FM</option>
+      </select>
+      <button class="btn" id="btnAddSrc">添加特殊源</button>
     </div>
     <table><thead><tr><th>歌单</th><th>曲目</th><th>已入库</th><th>等待</th><th>失败</th><th>最近同步</th><th></th></tr></thead>
     <tbody id="plBody"></tbody></table>
@@ -121,6 +128,7 @@
   <section class="card">
     <h2>本地音乐
       <span style="float:right">
+        <input type="text" id="localSearch" placeholder="搜索标题/歌手/专辑…" style="max-width:200px;width:auto;display:inline-block;margin-right:10px">
         <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--dim);margin-right:10px">
           <input type="checkbox" id="onlyMissing"> 仅显示缺失</label>
         <button class="btn mini" id="btnScan">刷新列表</button>
@@ -174,6 +182,9 @@
           <option value="true">移入 _trash 回收目录</option>
         </select>
       </label>
+      <label class="field">回收目录保留天数
+        <input type="number" id="sTrashDays" min="0" placeholder="30(0=不自动清理)">
+      </label>
     </div>
 
     <div class="sect">音质(勾选的档位参与降档,顺序固定从高到低)</div>
@@ -186,6 +197,7 @@
     <div class="ckrow">
       <label><input type="checkbox" id="sLrc"> 生成同名 .lrc 歌词文件</label>
       <label><input type="checkbox" id="sEmbed"> 歌词嵌入音频标签</label>
+      <label><input type="checkbox" id="sYrc"> 优先逐字歌词(自动转 LRC)</label>
       <label><input type="checkbox" id="sNfo"> 生成 NFO 元数据(album.nfo / artist.nfo,Jellyfin/Emby)</label>
     </div>
 
@@ -212,6 +224,12 @@
     <div class="fgrid">
       <label class="field">下载并发数(1–8)
         <input type="number" id="sConc" min="1" max="8">
+      </label>
+      <label class="field">单轮下载上限<span class="hint">0=不限;超过部分下轮继续</span>
+        <input type="number" id="sMaxRun" min="0">
+      </label>
+      <label class="field">最小剩余磁盘空间(GB)<span class="hint">低于则本轮跳过下载</span>
+        <input type="number" id="sMinFree" min="0" step="0.5">
       </label>
       <label class="field">API 请求间隔(秒,随机区间)
         <div class="inline"><input type="number" id="sDelayMin" step="0.5" min="0"><span class="muted">~</span><input type="number" id="sDelayMax" step="0.5" min="0"></div>
@@ -271,7 +289,10 @@ async function refreshStatus() {
   $('#cookieTxt').textContent = s.cookie_ok ? '有效' : '失效,请扫码';
   $('#nextRun').textContent = (s.next_run || '-').replace('T', ' ');
   $('#cronTxt').textContent = s.schedule;
-  $('#layoutTxt').textContent = s.layout === 'archive' ? '歌手/专辑归档' : '按歌单';
+  $('#layoutTxt').textContent = s.layout === 'album' ? '按专辑' : (s.layout === 'artist' ? '按歌手' : (s.layout === 'flat' ? '歌曲平铺' : '按歌单'));
+  if (s.disk && s.disk.free_gb != null) {
+    $('#diskInfo').textContent = `磁盘可用 ${s.disk.free_gb}GB / ${s.disk.total_gb}GB (${s.disk.free_pct}%)`;
+  }
   $('#btnSync').disabled = s.running;
   $('#btnSync').textContent = s.running ? '同步中…' : '立即同步';
 
@@ -365,11 +386,12 @@ const NOTIFY_EVENTS = [
 async function loadSettings() {
   const s = await api('/api/settings');
   $('#sSchedule').value = s.schedule; $('#sLayout').value = s.layout; $('#sNaming').value = s.naming;
-  $('#sMirror').value = String(!!s.mirror);
-  $('#sConc').value = s.concurrency; $('#sDelayMin').value = s.delay_min; $('#sDelayMax').value = s.delay_max;
+  $('#sMirror').value = String(!!s.mirror); $('#sTrashDays').value = s.trash_days;
+  $('#sConc').value = s.concurrency; $('#sMaxRun').value = s.max_per_run; $('#sMinFree').value = s.min_free_space;
+  $('#sDelayMin').value = s.delay_min; $('#sDelayMax').value = s.delay_max;
   $('#sToken').value = s.web_token; $('#sWebPort').value = s.web_port; $('#sWebEnabled').checked = s.web_enabled;
   $('#sUpgrade').checked = s.upgrade_existing; $('#sLrc').checked = s.lrc; $('#sEmbed').checked = s.embed;
-  $('#sNfo').checked = s.nfo;
+  $('#sYrc').checked = !!s.yrc; $('#sNfo').checked = s.nfo;
   $('#sNotifyType').value = s.notify_type; $('#sNotifyUrl').value = s.notify_url; $('#sNotifySecret').value = s.notify_secret;
   const ev = s.notify_events || {};
   $('#sEvents').innerHTML = NOTIFY_EVENTS.map(([k, label]) =>
@@ -383,13 +405,16 @@ function collectSettings() {
     layout: $('#sLayout').value,
     naming: $('#sNaming').value.trim(),
     mirror: $('#sMirror').value === 'true',
+    trash_days: +$('#sTrashDays').value || 30,
     chain: LEVELS.map(([k]) => k).filter(k => $(`#sChain input[value=${k}]`).checked),
     upgrade_existing: $('#sUpgrade').checked,
-    lrc: $('#sLrc').checked, embed: $('#sEmbed').checked, nfo: $('#sNfo').checked,
+    lrc: $('#sLrc').checked, embed: $('#sEmbed').checked, yrc: $('#sYrc').checked, nfo: $('#sNfo').checked,
     notify_type: $('#sNotifyType').value, notify_url: $('#sNotifyUrl').value.trim(),
     notify_secret: $('#sNotifySecret').value.trim(),
     events: Object.fromEntries(NOTIFY_EVENTS.map(([k]) => [k, $(`#sEvents input[data-ev="${k}"]`).checked])),
     concurrency: +$('#sConc').value || 3,
+    max_per_run: +$('#sMaxRun').value || 0,
+    min_free_space: +$('#sMinFree').value || 2,
     delay_min: +$('#sDelayMin').value || 1, delay_max: +$('#sDelayMax').value || 3,
     web_enabled: $('#sWebEnabled').checked, web_port: +$('#sWebPort').value || 8286,
     web_token: $('#sToken').value.trim(),
@@ -410,6 +435,13 @@ $('#btnAdd').onclick = async () => {
     const r = await api('/api/playlists', {method: 'POST', body: {id: $('#plId').value, name: $('#plName').value}});
     $('#plId').value = ''; $('#plName').value = ''; refreshStatus();
     if (!r.sync_started) alert('已添加。当前有任务在运行,该歌单将在下一轮(或手动触发时)同步。');
+  } catch (e) { alert(e.message); }
+};
+$('#btnAddSrc').onclick = async () => {
+  try {
+    const r = await api('/api/playlists', {method: 'POST', body: {source: $('#srcSel').value}});
+    refreshStatus();
+    if (!r.sync_started) alert('已添加。当前有任务在运行,稍后自动同步。');
   } catch (e) { alert(e.message); }
 };
 $('#btnAcc').onclick = async () => {
@@ -501,6 +533,7 @@ let localFiles = [];
 let currentMatchPath = '';
 $('#btnScan').onclick = loadLocal;
 $('#onlyMissing').onchange = renderLocal;
+$('#localSearch').oninput = renderLocal;
 async function loadLocal() {
   try {
     const { files } = await api('/api/local/files');
@@ -510,7 +543,11 @@ async function loadLocal() {
 }
 function renderLocal() {
   const only = $('#onlyMissing').checked;
-  const rows = localFiles.map((f, i) => ({f, i})).filter(x => !only || x.f.missing);
+  const kw = $('#localSearch').value.trim().toLowerCase();
+  const rows = localFiles.map((f, i) => ({f, i}))
+    .filter(x => !only || x.f.missing)
+    .filter(x => !kw || [x.f.title, x.f.artist, x.f.album, x.f.name]
+      .some(v => (v || '').toLowerCase().includes(kw)));
   $('#localBody').innerHTML = rows.map(({f, i}) => `
     <tr>
       <td>${esc(f.title || f.name)}</td>
@@ -590,14 +627,24 @@ async function saveEdit(i) {
   } catch (e) { alert(e.message); }
 }
 
+async function checkUpgrade() {
+  try {
+    const u = await api('/api/upgrade');
+    $('#newVer').style.display = u.has_update ? '' : 'none';
+    if (u.has_update) $('#newVer').textContent = `🆕 新版本 ${u.latest} 可用`;
+  } catch (e) { /* 静默 */ }
+}
+
 /* ---------- 初始化 ---------- */
 async function init() {
   await Promise.all([refreshStatus(), refreshRuns(), refreshLogs(), loadSettings()]);
+  checkUpgrade();
   const { content } = await api('/api/config');
   $('#cfgText').value = content;
   setInterval(refreshStatus, 2000);
   setInterval(refreshRuns, 15000);
   setInterval(refreshLogs, 10000);
+  setInterval(checkUpgrade, 600000);
 }
 init().catch(e => console.error(e));
 </script>

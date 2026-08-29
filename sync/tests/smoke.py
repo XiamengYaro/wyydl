@@ -163,6 +163,30 @@ ok("事件:失败推送", _notify.should_notify(
 ok("事件:登录失效推送", _notify.should_notify(
     {"notify": {"events": {"on_login_expired": True}}}, {"status": "login_expired"}))
 
+# ---- 特殊源 / yrc / 失败退避 ----
+from wyydl import yrc as _yrc_mod  # noqa: E402
+from wyydl.syncer import SOURCE_NAME as _SRCN  # noqa: E402
+from wyydl.syncer import SOURCE_PID as _SRC  # noqa: E402
+
+_a = _mock_api([
+    {"data": [{"songId": 1}, {"songId": 2}]},
+    {"data": {"dailySongs": [{"id": 3}, {"id": 4}]}},
+    {"data": [{"id": 5}, {"id": 6}]},
+    {"yrc": {"lyric": "[16210,3460](16210,670,0)还(16880,410,0)没"}},
+])
+ok("云盘分页", _a.user_cloud() == [1, 2])
+ok("每日推荐", _a.recommend_songs() == [3, 4])
+ok("私人FM", _a.personal_fm() == [5, 6])
+ok("逐字歌词接口", _a.lyric_new(1) == "[16210,3460](16210,670,0)还(16880,410,0)没")
+ok("yrc 转 LRC", _yrc_mod.yrc_to_lrc("[16210,3460](16210,670,0)还(16880,410,0)没") == "[00:16]还没")
+ok("特殊源常量", _SRC["cloud"] == -1 and _SRC["daily"] == -2 and _SRCN["fm"] == "私人FM")
+
+st.upsert_song(sid=401, title="坏歌", fail_count=3, downloaded_at="2026-08-29 00:00:00")
+ok("fail_count 读写", st.song(401)["fail_count"] == 3)
+_engF = SyncEngine(config.Config.load(), st, _mock_api([]))
+_engF._note_fail(401)
+ok("失败计数+1", st.song(401)["fail_count"] == 4)
+
 # ---- 本地信息缺失识别与手动匹配 ----
 _mflac = config.MUSIC_DIR / "手动测试.flac"
 import struct as _st  # noqa: E402
@@ -243,6 +267,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 api = NcmApi("http://127.0.0.1:1", config.load_music_u, (0.0, 0.0))
 eng = type("E", (), {"cfg": cfg, "cookie_ok": lambda self: False, "running": False,
                      "progress": {}, "recent": [], "active": {},
+                     "_music_root": lambda self: config.MUSIC_DIR,
                      "try_run": lambda self, ids=None, trigger="m": False})()
 client = TestClient(create_app(AppContext(cfg=cfg, state=st, api=api, engine=eng)))
 r = client.get("/api/status")
@@ -268,7 +293,8 @@ good = client.put("/api/settings", json={
     "notify_type": "feishu", "notify_url": "https://example.com/hook", "notify_secret": "",
     "events": {"on_failed": False, "on_start": True},
     "web_enabled": True, "web_port": 8286, "web_token": "t1",
-    "concurrency": 2, "delay_min": 1, "delay_max": 2})
+    "concurrency": 2, "delay_min": 1, "delay_max": 2,
+    "max_per_run": 5, "min_free_space": 1, "trash_days": 7, "yrc": True})
 ok("保存结构化设置", good.status_code == 200)
 ok("设置生效", cfg.d["schedule"] == "30 5 * * *" and cfg.d["web"]["token"] == "t1"
    and cfg.d["lyrics"]["embed"] is False and cfg.d["limits"]["download_concurrency"] == 2
@@ -277,6 +303,8 @@ ok("设置生效", cfg.d["schedule"] == "30 5 * * *" and cfg.d["web"]["token"] =
 ok("通知事件生效", cfg.d["notify"]["events"]["on_failed"] is False
    and cfg.d["notify"]["events"]["on_start"] is True
    and cfg.d["notify"]["events"]["on_changes"] is True)
+ok("新配置项生效", cfg.d["lyrics"]["yrc"] is True and cfg.d["limits"]["max_per_run"] == 5
+   and cfg.d["limits"]["min_free_space"] == 1 and cfg.d["trash_retention_days"] == 7)
 ok("表单保存不影响歌单与 api_base", cfg.playlist_ids() == [999] and cfg.d["api_base"].startswith("http"))
 
 print(f"\n全部 {passed} 项通过 ✅")

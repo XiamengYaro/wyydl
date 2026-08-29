@@ -10,9 +10,10 @@ import httpx
 
 
 def download(url: str, tmp_dir: Path, timeout: tuple[float, float] = (20.0, 900.0),
-             progress=None) -> tuple[Path, str, int]:
+             progress=None, proxy: str | None = None) -> tuple[Path, str, int]:
     """下载到 tmp_dir 下的 .part 文件,返回 (path, md5_hex, size)。
-    progress(downloaded, total) 按块回调,total 取 Content-Length(可能为 0)。"""
+    progress(downloaded, total) 按块回调,total 取 Content-Length(可能为 0);
+    proxy 可选,仅作用于本次 CDN 下载。"""
     tmp_dir.mkdir(parents=True, exist_ok=True)
     tmp = tmp_dir / f".dl-{os.getpid()}-{int(time.time() * 1000)}.part"
     h = hashlib.md5()
@@ -20,7 +21,8 @@ def download(url: str, tmp_dir: Path, timeout: tuple[float, float] = (20.0, 900.
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                    "Referer": "https://music.163.com/"}
-        with httpx.stream("GET", url, timeout=timeout, headers=headers, follow_redirects=True) as r:
+        with httpx.stream("GET", url, timeout=timeout, headers=headers,
+                          follow_redirects=True, proxy=proxy) as r:
             r.raise_for_status()
             total = int(r.headers.get("content-length") or 0)
             with open(tmp, "wb") as f:

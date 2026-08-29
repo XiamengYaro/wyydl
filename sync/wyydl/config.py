@@ -24,8 +24,9 @@ DEFAULTS: dict = {
         "chain": ["jymaster", "hires", "lossless", "exhigh", "standard"],
         "upgrade_existing": True,     # 发现更高音质时重新下载
     },
-    "lyrics": {"lrc": True, "embed": True},
+    "lyrics": {"lrc": True, "embed": True, "yrc": False},
     "nfo": True,                      # 生成 album.nfo / artist.nfo(Jellyfin/Emby/Kodi)
+    "trash_retention_days": 30,       # _trash 回收文件保留天数(<=0 不自动清理)
     "mirror": False,                  # playlist 布局下,歌单移除的歌曲是否移入 _trash
     "notify": {
         "type": "feishu",
@@ -42,7 +43,13 @@ DEFAULTS: dict = {
         },
     },
     "web": {"enabled": True, "port": 8286, "token": ""},
-    "limits": {"download_concurrency": 3, "api_delay": [1.0, 3.0]},
+    "limits": {
+        "download_concurrency": 3,
+        "api_delay": [1.0, 3.0],
+        "max_per_run": 0,             # 每轮最多下载/重试的曲目数;0=不限
+        "min_free_space": 2,          # 音乐目录所在磁盘剩余低于此 GB 时跳过下载
+        "proxy": "",                  # 可选:CDN 下载代理,如 http://127.0.0.1:7890(仅下载请求)
+    },
 }
 
 

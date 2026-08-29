@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional
 
+import httpx
 import yaml
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse
@@ -16,13 +19,21 @@ from . import __version__, config as cfgmod, notify
 from .api import NcmApi
 from .config import LOG_DIR, Config
 from .state import State
-from .syncer import SyncEngine
+from .syncer import SOURCE_PID, SyncEngine
 
 log = logging.getLogger("wyydl.web")
 
 _INDEX = Path(__file__).parent / "static" / "index.html"
 
 _QR_MSG = {800: "二维码已过期", 801: "等待扫码", 802: "已扫码,请在手机上确认", 803: "登录成功"}
+
+_UPGRADE_CACHE = {"ts": 0.0, "data": None}
+_UPGRADE_TTL = 3600  # 升级检查 1 小时缓存,避免 GitHub API 限频
+
+
+def _ver_tuple(v: str) -> tuple:
+    nums = re.findall(r"\d+", str(v).lstrip("v"))
+    return tuple(int(x) for x in nums[:3]) or (0, 0, 0)
 
 
 @dataclass
@@ -56,6 +67,10 @@ def create_app(ctx: AppContext) -> FastAPI:
     @app.get("/api/status", dependencies=[Depends(guard)])
     def status() -> dict:
         stats = ctx.state.playlist_stats()
+        cfg_ids = set(ctx.cfg.playlist_ids())
+        for e in (ctx.cfg.d.get("playlists") or []):
+            if e.get("source") in SOURCE_PID:
+                cfg_ids.add(SOURCE_PID[e["source"]])
         pls = []
         for p in ctx.state.playlists():
             st = stats.get(p["pid"], {})
@@ -63,12 +78,20 @@ def create_app(ctx: AppContext) -> FastAPI:
                 "id": p["pid"], "name": p["name"], "total": p["track_count"],
                 "ok": st.get("ok") or 0, "pending": st.get("pending") or 0,
                 "failed": st.get("bad") or 0,
-                "configured": p["pid"] in ctx.cfg.playlist_ids(),
+                "configured": p["pid"] in cfg_ids,
                 "last_sync": p["last_sync"],
             })
         prog = dict(ctx.engine.progress or {})
         prog["recent"] = list(getattr(ctx.engine, "recent", []))[-8:]
         prog["active"] = list(getattr(ctx.engine, "active", {}).values())[:10]
+        disk = {}
+        try:
+            u = shutil.disk_usage(ctx.engine._music_root())
+            disk = {"free_gb": round(u.free / 1024 ** 3, 1),
+                    "total_gb": round(u.total / 1024 ** 3, 1),
+                    "free_pct": round(u.free / u.total * 100, 1)}
+        except OSError:
+            disk = {}
         return {
             "version": __version__,
             "cookie_ok": ctx.engine.cookie_ok(),
@@ -79,6 +102,7 @@ def create_app(ctx: AppContext) -> FastAPI:
             "playlists": pls,
             "layout": ctx.cfg.layout,
             "schedule": ctx.cfg.schedule,
+            "disk": disk,
         }
 
     @app.post("/api/sync", dependencies=[Depends(guard)])
@@ -116,11 +140,19 @@ def create_app(ctx: AppContext) -> FastAPI:
     # ---------- 歌单管理 ----------
     @app.post("/api/playlists", dependencies=[Depends(guard)])
     async def add_playlist(payload: dict) -> dict:
+        pls = ctx.cfg.d.setdefault("playlists", [])
+        source = str(payload.get("source") or "").strip()
+        if source in SOURCE_PID:  # 特殊源:云盘 / 每日推荐 / 私人FM
+            if any(p.get("source") == source for p in pls):
+                raise HTTPException(status_code=409, detail="该来源已添加")
+            pls.append({"source": source})
+            ctx.cfg.save()
+            started = ctx.engine.try_run(None, trigger="add")
+            return {"added": SOURCE_PID[source], "sync_started": bool(started)}
         try:
             pid = int(str(payload.get("id")).strip())
         except (TypeError, ValueError, AttributeError):
             raise HTTPException(status_code=400, detail="歌单 ID 必须是数字")
-        pls = ctx.cfg.d.setdefault("playlists", [])
         if any(int(p.get("id", -1)) == pid for p in pls):
             raise HTTPException(status_code=409, detail="该歌单已存在")
         name = str(payload.get("name") or "").strip()
@@ -128,6 +160,39 @@ def create_app(ctx: AppContext) -> FastAPI:
         ctx.cfg.save()
         started = ctx.engine.try_run([pid], trigger="add")  # 加入后立即同步一次
         return {"added": pid, "sync_started": bool(started)}
+
+    @app.delete("/api/playlists/{pid}", dependencies=[Depends(guard)])
+    def remove_playlist(pid: int) -> dict:
+        pls = ctx.cfg.d.get("playlists") or []
+        if pid < 0:  # 特殊源
+            src = next((k for k, v in SOURCE_PID.items() if v == pid), None)
+            if src is None or not any(p.get("source") == src for p in pls):
+                raise HTTPException(status_code=404, detail="来源不存在")
+            ctx.cfg.d["playlists"] = [p for p in pls if p.get("source") != src]
+            ctx.cfg.save()
+            ctx.state.remove_playlist(pid)
+            return {"removed": pid}
+        if not any(int(p.get("id", -1)) == pid for p in pls):
+            raise HTTPException(status_code=404, detail="歌单不存在")
+        ctx.cfg.d["playlists"] = [p for p in pls if int(p.get("id", -1)) != pid]
+        ctx.cfg.save()
+        ctx.state.remove_playlist(pid)  # 本地文件保留,仅解除关联
+        return {"removed": pid}
+
+    @app.get("/api/upgrade", dependencies=[Depends(guard)])
+    def upgrade_check() -> dict:
+        if time.time() - _UPGRADE_CACHE["ts"] > _UPGRADE_TTL:
+            try:
+                r = httpx.get("https://api.github.com/repos/XiamengYaro/wyydl/releases/latest",
+                              timeout=6, headers={"User-Agent": "wyydl"})
+                latest = (r.json().get("tag_name") or "").lstrip("v") if r.status_code == 200 else ""
+            except Exception:
+                latest = ""
+            _UPGRADE_CACHE.update(ts=time.time(), data=latest)
+        latest = _UPGRADE_CACHE["data"] or ""
+        return {"latest": latest, "current": __version__,
+                "has_update": bool(latest) and _ver_tuple(latest) > _ver_tuple(__version__),
+                "url": "https://github.com/XiamengYaro/wyydl/releases"}
 
     @app.get("/api/account/playlists", dependencies=[Depends(guard)])
     def account_playlists() -> dict:
@@ -192,14 +257,18 @@ def create_app(ctx: AppContext) -> FastAPI:
             "chain": d["quality"].get("chain") or [],
             "upgrade_existing": d["quality"].get("upgrade_existing", True),
             "lrc": d["lyrics"].get("lrc", True), "embed": d["lyrics"].get("embed", True),
+            "yrc": d["lyrics"].get("yrc", False),
             "nfo": d.get("nfo", True),
             "mirror": d.get("mirror", False),
+            "trash_days": d.get("trash_retention_days") or 30,
             "notify_type": nf.get("type") or "feishu", "notify_url": nf.get("url") or "",
             "notify_secret": nf.get("secret") or "",
             "notify_events": notify.events_for(d),
             "web_enabled": web.get("enabled", True), "web_port": web.get("port") or 8286,
             "web_token": web.get("token") or "",
             "concurrency": d["limits"].get("download_concurrency") or 3,
+            "max_per_run": d["limits"].get("max_per_run") or 0,
+            "min_free_space": d["limits"].get("min_free_space") or 2,
             "delay_min": delay[0], "delay_max": delay[1],
         }
 
@@ -230,13 +299,22 @@ def create_app(ctx: AppContext) -> FastAPI:
         for k in events:
             if k in events_in:
                 events[k] = bool(events_in[k])
+        old_limits = ctx.cfg.d.get("limits") or {}
+        try:
+            max_run = max(0, int(payload.get("max_per_run") or 0))
+            min_free = max(0.0, float(payload.get("min_free_space") or 2))
+            trash_days = max(0, int(payload.get("trash_days") or 30))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="上限/空间/保留天数必须是数字")
         new_cfg = Config({
             "schedule": schedule, "layout": layout,
             "naming": str(payload.get("naming") or "").strip(),
             "quality": {"chain": chain, "upgrade_existing": bool(payload.get("upgrade_existing"))},
-            "lyrics": {"lrc": bool(payload.get("lrc")), "embed": bool(payload.get("embed"))},
+            "lyrics": {"lrc": bool(payload.get("lrc")), "embed": bool(payload.get("embed")),
+                       "yrc": bool(payload.get("yrc"))},
             "nfo": bool(payload.get("nfo")),
             "mirror": bool(payload.get("mirror")),
+            "trash_retention_days": trash_days,
             "notify": {
                 "type": "feishu" if payload.get("notify_type") == "feishu" else "webhook",
                 "url": str(payload.get("notify_url") or "").strip(),
@@ -247,7 +325,11 @@ def create_app(ctx: AppContext) -> FastAPI:
                 "enabled": bool(payload.get("web_enabled")), "port": port,
                 "token": str(payload.get("web_token") or "").strip(),
             },
-            "limits": {"download_concurrency": conc, "api_delay": [lo, hi]},
+            "limits": {
+                "download_concurrency": conc, "api_delay": [lo, hi],
+                "max_per_run": max_run, "min_free_space": min_free,
+                "proxy": str(old_limits.get("proxy") or ""),  # 表单不含代理,保持原值
+            },
         })
         new_cfg.d["playlists"] = ctx.cfg.d.get("playlists") or []  # 歌单在别处管理,保持不变
         new_cfg.d["api_base"] = ctx.cfg.d.get("api_base") or new_cfg.d["api_base"]  # 高级字段不经表单,保持原值
