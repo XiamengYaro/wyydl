@@ -51,6 +51,12 @@ jobs:
       - name: 打包 fpk
         run: ./fpk/build.sh
 
+      - name: 准备 Buildx(多架构容器驱动)
+        uses: docker/setup-buildx-action@v3
+
+      - name: 准备 QEMU(arm64 模拟)
+        uses: docker/setup-qemu-action@v3
+
       - name: 构建并推送 Docker 镜像(GHCR,多架构)
         if: startsWith(github.ref, 'refs/tags/')
         uses: docker/build-push-action@v6
