@@ -31,13 +31,20 @@ _UPGRADE_CACHE = {"ts": 0.0, "data": None}
 _UPGRADE_TTL = 3600  # 升级检查 1 小时缓存,避免 GitHub API 限频
 
 
+def _pre_tuple(pre: str | None) -> tuple:
+    """SemVer 预发布标识比较:数字段按数值、字母段按字典序,数字段 < 字母段,段少 < 段多。"""
+    if not pre:
+        return (1,)  # 正式版高于一切预发布
+    parts = pre[1:].split(".")
+    return (0, tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in parts))
+
+
 def _ver_tuple(v: str) -> tuple:
-    """语义化版本 → 可比较元组 (major, minor, patch, 是否预发布)。
-    预发布(如 1.12.0-beta.1)低于同版本正式版。"""
+    """语义化版本 → 可比较元组 (major, minor, patch, 预发布排序键)。"""
     m = re.match(r"v?(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(?:\+.*)?$", str(v).strip())
     if not m:
-        return (0, 0, 0, 1)
-    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), 0 if m.group(4) else 1)
+        return (0, 0, 0, (1,))
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), _pre_tuple(m.group(4)))
 
 
 @dataclass
