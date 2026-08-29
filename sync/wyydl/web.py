@@ -118,6 +118,7 @@ def create_app(ctx: AppContext) -> FastAPI:
 
     @app.get("/api/tracks/{pid}", dependencies=[Depends(guard)])
     def tracks(pid: int) -> dict:
+        counts = ctx.state.membership_counts()
         out = []
         for sid, pos in ctx.state.playlist_songs(pid):
             s = ctx.state.song(sid) or {}
@@ -125,6 +126,8 @@ def create_app(ctx: AppContext) -> FastAPI:
                 "sid": sid, "pos": pos, "title": s.get("title") or str(sid),
                 "artist": s.get("artist") or "", "album": s.get("album") or "",
                 "status": s.get("status") or "new", "level": s.get("level") or "",
+                "dup": counts.get(sid, 0) > 1,
+                "last_error": s.get("last_error") or "",
             })
         out.sort(key=lambda x: x["pos"])
         return {"tracks": out}

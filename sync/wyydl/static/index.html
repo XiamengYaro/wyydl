@@ -42,6 +42,7 @@
   .tag{font-size:11px;padding:1px 7px;border-radius:5px;background:#222836;color:var(--dim)}
   .tag.ok{background:#12331f;color:var(--ok)}
   .tag.bad{background:#3a1d1d;color:var(--err)}
+  .tag.warn{background:#33291b;color:var(--warn)}
   .tag.lv{background:#1c2a44;color:#7aa7e8}
   input[type=text],input[type=number],input[type=password],select,textarea{
     background:#10131a;border:1px solid var(--line);border-radius:8px;
@@ -525,12 +526,20 @@ dlg.addEventListener('close', () => { if (pollTimer) { clearInterval(pollTimer);
 
 async function viewTracks(id, name) {
   const { tracks } = await api('/api/tracks/' + id);
-  const rows = tracks.map(t => `
-    <tr><td>${t.pos + 1}</td><td>${esc(t.title)}</td><td class="muted">${esc(t.artist)}</td>
-    <td><span class="tag ${t.status === 'ok' ? 'ok' : (t.status === 'new' ? '' : 'bad')}">${esc(t.status === 'new' ? '等待' : t.status)}</span></td>
-    <td><span class="tag lv">${esc(t.level)}</span></td></tr>`).join('');
+  const rows = tracks.map(t => {
+    let st = ['等待', ''];
+    if (t.status === 'ok') st = ['已入库', 'ok'];
+    else if (t.status === 'failed') st = ['失败', 'bad'];
+    else if (t.status === 'removed') st = ['已移除', ''];
+    const dup = t.dup ? '<span class="tag warn">重复</span>' : '';
+    const reason = (t.status === 'failed' && t.last_error)
+      ? `<button class="btn mini" data-reason="${esc(t.last_error)}" onclick="toast(this.dataset.reason,'warn')">原因</button>` : '';
+    return `<tr><td>${t.pos + 1}</td><td>${esc(t.title)}</td><td class="muted">${esc(t.artist)}</td>
+      <td><span class="tag ${st[1]}">${st[0]}</span> ${dup}</td>
+      <td><span class="tag lv">${esc(t.level)}</span></td><td>${reason}</td></tr>`;
+  }).join('');
   showDialog(`<h2 style="margin:0 0 10px">${esc(name)} · ${tracks.length} 首</h2>
-    <div style="max-height:60vh;overflow:auto"><table><thead><tr><th>#</th><th>标题</th><th>歌手</th><th>状态</th><th>音质</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+    <div style="max-height:60vh;overflow:auto"><table><thead><tr><th>#</th><th>标题</th><th>歌手</th><th>状态</th><th>音质</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`);
 }
 
 /* ---------- 扫码登录 ---------- */
@@ -587,7 +596,9 @@ function renderLocal() {
       <td>${esc(f.title || f.name)}</td>
       <td class="muted">${esc(f.artist)}</td>
       <td class="muted">${esc(f.album)}</td>
-      <td><span class="tag ${f.missing ? (f.in_db ? 'bad' : '') : 'ok'}">${f.missing ? (f.in_db ? '缺失' : '未入库') : '已入库'}</span></td>
+      <td><span class="tag ${f.missing ? (f.in_db ? 'bad' : '') : 'ok'}">${f.missing ? (f.in_db ? (f.status === 'failed' ? '失败' : '缺失') : '未入库') : '已入库'}</span>
+        ${f.dup ? '<span class="tag warn">重复</span>' : ''}
+        ${f.status === 'failed' && f.last_error ? `<button class="btn mini" data-reason="${esc(f.last_error)}" onclick="toast(this.dataset.reason,'warn')">原因</button>` : ''}</td>
       <td style="white-space:nowrap">
         <button class="btn mini" onclick="refetchFile(${i})">重刮削</button>
         <button class="btn mini" onclick="openMatch(${i})">匹配</button>

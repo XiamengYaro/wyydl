@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS runs(
 """
 
 _SONG_FIELDS = ("sid", "title", "artist", "album", "file_path", "ext", "track_no",
-                "level", "br", "size", "md5", "downloaded_at", "status", "fail_count")
+                "level", "br", "size", "md5", "downloaded_at", "status", "fail_count", "last_error")
 
 
 def _rows_to_dicts(cur: sqlite3.Cursor) -> list[dict]:
@@ -61,7 +61,8 @@ class State:
         with self._lock:
             self._conn.executescript(_SCHEMA)
             for col in ("track_no INTEGER NOT NULL DEFAULT 0",
-                        "fail_count INTEGER NOT NULL DEFAULT 0"):
+                        "fail_count INTEGER NOT NULL DEFAULT 0",
+                        "last_error TEXT NOT NULL DEFAULT ''"):
                 try:  # 旧库迁移:补充列
                     self._conn.execute(f"ALTER TABLE songs ADD COLUMN {col}")
                 except sqlite3.OperationalError:
@@ -104,6 +105,11 @@ class State:
     def playlist_songs(self, pid: int) -> list[tuple[int, int]]:
         cur = self._exec("SELECT sid,pos FROM playlist_songs WHERE pid=? ORDER BY pos", (pid,))
         return [(r[0], r[1]) for r in cur.fetchall()]
+
+    def membership_counts(self) -> dict[int, int]:
+        """每个 sid 被多少个歌单/来源引用(用于「重复」标记)。"""
+        cur = self._exec("SELECT sid, COUNT(*) AS c FROM playlist_songs GROUP BY sid")
+        return {r["sid"]: int(r["c"]) for r in _rows_to_dicts(cur)}
 
     def playlist_stats(self) -> dict[int, dict]:
         """每个歌单的 ok / pending(等待下载) / bad(真实失败) 歌曲数。"""

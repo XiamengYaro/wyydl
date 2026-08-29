@@ -184,8 +184,13 @@ ok("特殊源常量", _SRC["cloud"] == -1 and _SRC["daily"] == -2 and _SRCN["fm"
 st.upsert_song(sid=401, title="坏歌", fail_count=3, downloaded_at="2026-08-29 00:00:00")
 ok("fail_count 读写", st.song(401)["fail_count"] == 3)
 _engF = SyncEngine(config.Config.load(), st, _mock_api([]))
-_engF._note_fail(401)
-ok("失败计数+1", st.song(401)["fail_count"] == 4)
+_engF._note_fail(401, "无可用音源(试听或下架)")
+ok("失败原因持久化", st.song(401)["status"] == "failed"
+   and st.song(401)["last_error"] == "无可用音源(试听或下架)"
+   and st.song(401)["fail_count"] == 4)
+st.upsert_playlist(2, "另一歌单", 1)
+st.set_playlist_songs(2, [(101, 0)])
+ok("重复标记(多源引用)", st.membership_counts()[101] == 2)
 
 # ---- 本地信息缺失识别与手动匹配 ----
 _mflac = config.MUSIC_DIR / "手动测试.flac"
@@ -275,7 +280,8 @@ ok("面板 /api/status", r.status_code == 200 and r.json()["layout"] == "album")
 r = client.get("/")
 ok("面板首页", r.status_code == 200 and "网易云歌单同步" in r.text)
 r = client.get("/api/tracks/1")
-ok("面板曲目列表", r.status_code == 200 and r.json()["tracks"][0]["title"] == "晴天")
+ok("面板曲目列表", r.status_code == 200 and r.json()["tracks"][0]["title"] == "晴天"
+   and r.json()["tracks"][0]["dup"] is True)
 
 # ---- 结构化设置 ----
 cfg.d["playlists"] = [{"id": 999}]

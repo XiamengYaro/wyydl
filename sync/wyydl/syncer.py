@@ -237,10 +237,12 @@ class SyncEngine:
             except OSError:
                 pass
 
-    def _note_fail(self, sid: int) -> None:
-        """整首下载失败:失败计数 +1(供 24h 退避),记录尝试时间。"""
+    def _note_fail(self, sid: int, reason: str = "") -> None:
+        """整首下载失败:状态置 failed、记录原因与时间、失败计数 +1(供 24h 退避)。"""
         row = self.state.song(sid) or {}
-        self.state.upsert_song(sid=sid, fail_count=int(row.get("fail_count") or 0) + 1,
+        self.state.upsert_song(sid=sid, status="failed",
+                               last_error=str(reason or "未知原因"),
+                               fail_count=int(row.get("fail_count") or 0) + 1,
                                downloaded_at=now_str())
 
     # ---------- 歌单元数据 ----------
@@ -331,7 +333,7 @@ class SyncEngine:
                 else:
                     summary["failed"] += 1
                     summary["failures"].append(r)
-                    self._note_fail(futs[fut])  # 失败计数,供 24h 退避
+                    self._note_fail(futs[fut], r.get("reason") or "")  # 失败计数 + 原因,供退避与查看
                     log.warning("失败 %s - %s:%s", r.get("artist"), r.get("title"), r.get("reason"))
         finally:
             pool.shutdown(wait=True)
@@ -440,7 +442,7 @@ class SyncEngine:
             file_path=str(final), ext=ext, track_no=int(meta.get("track") or 0),
             level=str(entry.get("level") or want_level),
             br=int(entry.get("br") or 0), size=size, md5=md5hex,
-            downloaded_at=now_str(), status="ok", fail_count=0,
+            downloaded_at=now_str(), status="ok", fail_count=0, last_error="",
         )
         if self.cfg.d.get("nfo", True):
             try:
@@ -572,7 +574,7 @@ class SyncEngine:
         return None
 
     def local_files(self) -> list[dict]:
-        """列出音乐目录全部音频文件:含当前信息(库内或文件内嵌)、缺失状态。"""
+        """列出音乐目录全部音频文件:含当前信息(库内或文件内嵌)、缺失状态、重复标记、失败原因。"""
         root = self._music_root()
         by_path: dict[str, dict] = {}
         for s in self.state.all_songs():
@@ -581,6 +583,7 @@ class SyncEngine:
                     by_path.setdefault(str(Path(s["file_path"]).resolve()), s)
                 except Exception:
                     pass
+        counts = self.state.membership_counts()
         out: list[dict] = []
         for p in root.rglob("*"):
             if not (p.is_file() and p.suffix.lower() in self._LOCAL_EXTS):
@@ -597,15 +600,18 @@ class SyncEngine:
                 album = row.get("album") or ""
                 status = row.get("status") or ""
                 level = row.get("level") or ""
+                last_error = row.get("last_error") or ""
+                dup = counts.get(int(row["sid"]), 0) > 1
             else:
                 t = self._read_file_tags(p)
                 title, artist, album = t["title"], t["artist"], t["album"]
-                status, level = "", ""
+                status, level, last_error, dup = "", "", "", False
             missing = (row is None) or (status != "ok") or (not title and not artist)
             out.append({
                 "path": str(p), "name": p.name, "size": st.st_size, "mtime": int(st.st_mtime),
                 "title": title, "artist": artist, "album": album,
                 "in_db": row is not None, "status": status, "level": level, "missing": missing,
+                "dup": dup, "last_error": last_error,
             })
         return sorted(out, key=lambda x: x["path"].casefold())
 
@@ -652,7 +658,7 @@ class SyncEngine:
             sid=sid, title=meta["title"], artist=meta["artist"], album=meta["album"],
             file_path=str(final), ext=final.suffix.lstrip(".").lower() or "mp3",
             track_no=int(meta.get("track") or 0), level="manual",
-            downloaded_at=now_str(), status="ok", fail_count=0,
+            downloaded_at=now_str(), status="ok", fail_count=0, last_error="",
         )
         if lrc and self.cfg.d["lyrics"].get("lrc", True):
             try:
