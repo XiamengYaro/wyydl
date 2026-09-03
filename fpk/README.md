@@ -68,6 +68,18 @@ cd fpk && ./build.sh
 3. 安装前确保应用中心已安装 **Docker** 应用(`install_init` 会检查);
 4. 安装后启动应用——appcenter 自动执行 `docker compose up`,**首次启动会构建镜像**,需设备可访问 pypi,耗时几分钟属正常。
 
+### QQ 音乐功能(可选,默认不随 fpk 启动)
+
+fpk 不内置 QQ API 容器(避免升级时从 GitHub 现场构建失败)。需要 QQ 歌单/下载时,SSH 手动启用一次:
+
+```bash
+# 若 ghcr.io 拉取失败,把镜像换成 ghcr.nju.edu.cn 前缀再 retag 即可
+docker run -d --name qq-music-api --restart unless-stopped \
+  --network wyydl_wyydl ghcr.io/xiamengyaro/qq-music-api:latest
+```
+
+说明:`--network wyydl_wyydl` 让容器加入 wyydl 的 compose 网络(容器名即 DNS 名,`QQ_API` 默认就指向它);面板顶栏 QQ 变为「已登录」前需在 QQ 登录框完成扫码或 Cookie。
+
 ## 安装后的东西在哪
 
 | 内容 | 位置 |

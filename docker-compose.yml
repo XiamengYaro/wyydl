@@ -23,9 +23,10 @@ services:
       - "127.0.0.1:3000:3000"   # 仅本机/SSH 隧道可访问,不暴露局域网
     networks: [wyydl]
 
+  # 可选:QQ 音乐 API(QQ 功能需要;网络不佳时可注释掉本服务)
+  # 镜像源用法:在旁侧 .env 写 WYYDL_QQ_IMAGE=ghcr.nju.edu.cn/xiamengyaro/qq-music-api:v1.12.0
   qq-music-api:
-    build: https://github.com/jsososo/QQMusicApi.git
-    image: ghcr.io/xiamengyaro/qq-music-api:latest
+    image: ${WYYDL_QQ_IMAGE:-ghcr.io/xiamengyaro/qq-music-api:v1.12.0}
     container_name: qq-music-api
     restart: unless-stopped
     environment:
@@ -34,8 +35,9 @@ services:
       - "3300"
     networks: [wyydl]
 
+  # 镜像源用法:.env 写 WYYDL_SYNC_IMAGE=<镜像源>/ghcr.io/xiamengyaro/wyydl-sync:latest
   wyydl-sync:
-    image: ghcr.io/xiamengyaro/wyydl-sync:latest
+    image: ${WYYDL_SYNC_IMAGE:-ghcr.io/xiamengyaro/wyydl-sync:latest}
     build: ./sync              # 二选一:用预构建镜像时注释此行
     container_name: wyydl-sync
     restart: unless-stopped

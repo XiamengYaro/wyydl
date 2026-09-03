@@ -14,6 +14,11 @@
 - 版本号**三处同步**:`fpk/manifest`、`sync/wyydl/__init__.py`、本文件;推送 `v<版本>` 标签自动构建发布(CI 校验标签与 manifest 一致、并校验标签为合法语义化版本)。
 - 纯文档/仓库内改动不涉及发布产物时,不强制递增版本号。
 
+## 1.12.1 - 2026-08-29
+
+- **修复 fpk 升级失败**:fpk 的 compose 不再包含 `qq-music-api` 的 GitHub 现场构建(部分 NAS 拉取 GitHub 失败导致整个 wyydl 无法升级)。QQ 功能变为**可选**——需要时按 fpk/README 的一条命令启用(CI 已把镜像发布到 GHCR,支持镜像源前缀拉取)。
+- 通用 docker-compose.yml 支持通过 `.env` 变量(`WYYDL_SYNC_IMAGE` / `WYYDL_QQ_IMAGE`)改用镜像源前缀。
+
 ## 1.12.0 - 2026-08-29
 
 ### 多平台打通:哔哩哔哩 + QQ 音乐
