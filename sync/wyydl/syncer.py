@@ -6,6 +6,7 @@ import logging
 import re
 import shutil
 import threading
+import zlib
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -13,11 +14,29 @@ from pathlib import Path
 import httpx
 
 from . import downloader, nfo, notify, quality, tagger, yrc
+from . import config as cfgmod
 from .api import ApiError, LoginExpired, NcmApi
+from .providers.base import platform_of_sid, raw_id_of
 from .config import DB_DIR, MUSIC_DIR, Config
 from .state import State
 
 log = logging.getLogger("wyydl.sync")
+
+
+def stable_pid(raw_id: str) -> int:
+    """非数字来源 ID(如 B 站链接)→ 稳定正整数 pid。"""
+    raw = str(raw_id)
+    if raw.lstrip("-").isdigit():
+        return int(raw)
+    return zlib.crc32(raw.encode("utf-8")) % 1_000_000_000
+
+
+class _Fail(Exception):
+    """下载链路内的可预期失败,reason 面向用户。"""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
 
 # 特殊来源的合成歌单 id(负值,避免与真实歌单 id 冲突)
 SOURCE_PID = {"cloud": -1, "daily": -2, "fm": -3}
@@ -29,20 +48,42 @@ def now_str() -> str:
 
 
 class SyncEngine:
-    def __init__(self, cfg: Config, state: State, api: NcmApi):
+    def __init__(self, cfg: Config, state: State, api):
+        """api 可为 NcmApi 实例(自动补齐 QQ/B 站 Provider),
+        或 {platform: Provider} 字典(多平台)。"""
         self.cfg = cfg
         self.state = state
-        self.api = api
+        self.tmp_dir = DB_DIR / "tmp"
+        from .providers.netease import NetEaseProvider
+        if isinstance(api, NcmApi):
+            from .providers.qq import QQProvider
+            from .providers.bili import BiliProvider
+            api = {
+                "netease": NetEaseProvider(api),
+                "qq": QQProvider(cfgmod.QQ_API, lambda: cfgmod.load_secret("qq")),
+                "bilibili": BiliProvider(lambda: cfgmod.load_secret("bili"),
+                                         lambda c: cfgmod.save_secret("bili", c),
+                                         self.tmp_dir),
+            }
+        self.providers: dict = api if isinstance(api, dict) else {"netease": api}
+        self.api = self.providers["netease"].api  # 兼容别名(网易 NcmApi)
         self.running = False
         self.progress: dict = {}
         self.recent: list = []
         self.active: dict = {}  # sid -> {title,artist,downloaded,total} 正在下载的曲目
         self._run_lock = threading.Lock()
-        self._cover_cache: dict[int, bytes | None] = {}
-        self._album_cache: dict[int, dict | None] = {}
-        self.tmp_dir = DB_DIR / "tmp"
+        self._cover_cache: dict[str, bytes | None] = {}
+        self._album_cache: dict[str, dict | None] = {}
         self._cookie_ok = False
         self._cookie_checked_at = 0.0
+
+    # ---- Provider 路由 ----
+    def _prov_by_platform(self, platform: str):
+        return self.providers.get(platform) or self.providers["netease"]
+
+    def _prov_of_sid(self, sid: int):
+        from .providers.base import platform_of_sid
+        return self._prov_by_platform(platform_of_sid(sid))
 
     # ================= 对外接口 =================
     def cookie_ok(self) -> bool:
@@ -106,16 +147,18 @@ class SyncEngine:
             if any(w < 0 for w in want):  # 负数 = 特殊源
                 targets = [p for p in targets if SOURCE_PID.get(p.get("source")) in want]
             else:
-                targets = [p for p in targets if int(p.get("id", -1)) in want] \
+                targets = [p for p in targets if stable_pid(p.get("id", -1)) in want] \
                     or [{"id": i, "name": ""} for i in want]
         if not targets:
             log.info("未配置任何歌单,本轮结束")
             return
 
-        # 1) 拉取目标曲目(普通歌单 + 特殊源;先记录旧成员表用于删除统计)
+        # 1) 拉取目标曲目(平台由条目 platform 决定,默认网易云;先记录旧成员表)
         desired: dict[int, list[dict]] = {}
         prev_members: dict[int, set[int]] = {}
         for p in targets:
+            platform = str(p.get("platform") or "netease")
+            prov = self._prov_by_platform(platform)
             source = str(p.get("source") or "playlist")
             if source in SOURCE_PID:
                 pid = SOURCE_PID[source]
@@ -128,49 +171,68 @@ class SyncEngine:
                     ids = []
                 tracks = [{"id": i} for i in ids]
             else:
-                pid = int(p["id"])
+                pid = stable_pid(p["id"])
                 self._set_progress("拉取歌单", str(p.get("name") or pid))
-                pl = self.api.playlist_detail(pid)
+                pl = prov.playlist_detail(pid)
                 name = str(p.get("name") or pl.get("name") or pid)
-                tracks = self.api.playlist_tracks(pid, pl=pl)
+                tracks = prov.playlist_tracks(pid, pl=pl)
+            for t in tracks:  # 平台内 ID → 全局 sid(分段)
+                t["_pid"] = str(t.get("_pid") or t.get("id") or "")
+                t["_sid"] = prov.sid(t["_pid"])
             prev_members[pid] = {sid for sid, _ in self.state.playlist_songs(pid)}
             desired[pid] = tracks
             self.state.upsert_playlist(pid, name, len(tracks), last_sync=now_str())
-            self.state.set_playlist_songs(pid, [(int(t["id"]), i) for i, t in enumerate(tracks) if t.get("id")])
-            summary["playlists"].append({"id": pid, "name": name, "total": len(tracks)})
-            log.info("歌单[%s] 共 %d 首", name, len(tracks))
+            self.state.set_playlist_songs(pid, [(t["_sid"], i) for i, t in enumerate(tracks) if t.get("_sid")])
+            summary["playlists"].append({"id": pid, "name": name, "total": len(tracks),
+                                         "platform": platform})
+            log.info("歌单[%s](%s) 共 %d 首", name, platform, len(tracks))
 
-        # 2) 详情与音质权限
-        all_ids = sorted({int(t["id"]) for ts in desired.values() for t in ts if t.get("id")})
+        # 2) 详情与音质权限(按平台分组拉取)
+        all_ids = sorted({t["_sid"] for ts in desired.values() for t in ts if t.get("_sid")})
         self._set_progress("拉取歌曲详情", f"{len(all_ids)} 首")
         details: dict[int, dict] = {}
-        for s in self.api.song_detail(all_ids):
-            details[int(s["id"])] = s
+        by_platform: dict[str, list[tuple[int, str]]] = {}
+        for ts in desired.values():
+            for t in ts:
+                if t.get("_sid"):
+                    plat = t.get("platform") or platform_of_sid(t["_sid"])
+                    by_platform.setdefault(plat, []).append((t["_sid"], t["_pid"]))
+        for plat, pairs in by_platform.items():
+            prov = self._prov_by_platform(plat)
+            raws = [raw for _, raw in pairs]
+            for (sid, raw), d in zip(pairs, prov.song_detail(raws)):
+                if not d:
+                    continue
+                d.setdefault("_pid", str(raw))
+                details[sid] = d
 
-        # 元数据先入库:下载完成前面板也能看到歌名/歌手(状态仍为 new)
+        # 元数据先入库(含 platform):下载完成前面板也能看到歌名/歌手(状态仍为 new)
         for sid in all_ids:
             d = details.get(sid)
             if not d:
                 continue
             artists = [a.get("name") for a in (d.get("ar") or d.get("artists") or []) if a.get("name")]
-            self.state.upsert_song(sid=sid, title=str(d.get("name") or sid),
+            self.state.upsert_song(sid=sid, platform=platform_of_sid(sid),
+                                   title=str(d.get("name") or sid),
                                    artist=" / ".join(artists) or "未知歌手",
                                    album=str((d.get("al") or {}).get("name") or "未知专辑"),
                                    track_no=int(d.get("no") or 0))
 
         # 3) 计划下载(失败退避:连续失败>=3 且 24h 内不再重试;单轮上限截断)
-        chain = cfg.quality_chain
         upgrade_on = bool(cfg.d["quality"].get("upgrade_existing", True))
-        tasks: list[tuple[int, str, str]] = []  # (sid, level, kind)
+        tasks: list[tuple[int, str, str, str]] = []  # (sid, level, kind, platform)
         now = _dt.datetime.now()
         for sid in all_ids:
             row = self.state.song(sid)
-            lvl = quality.pick_level((details.get(sid) or {}).get("privilege"), chain)
+            plat = platform_of_sid(sid)
+            prov = self._prov_by_platform(plat)
+            lvl = prov.pick_level((details.get(sid) or {}).get("privilege"),
+                                  cfg.quality_chain if plat == "netease" else prov.level_chain)
             has_file = bool(row and row["status"] == "ok" and row["file_path"]
                             and Path(row["file_path"]).exists())
             if has_file:
                 if upgrade_on and quality.rank(lvl) > quality.rank(row["level"]):
-                    tasks.append((sid, lvl, "upgrade"))
+                    tasks.append((sid, lvl, "upgrade", plat))
                 continue
             if row and int(row.get("fail_count") or 0) >= 3 and row.get("downloaded_at"):
                 try:
@@ -179,13 +241,13 @@ class SyncEngine:
                         continue  # 退避中,下轮再试
                 except ValueError:
                     pass
-            tasks.append((sid, lvl, "new"))
+            tasks.append((sid, lvl, "new", plat))
         limit = int(cfg.d["limits"].get("max_per_run") or 0)
         if limit > 0 and len(tasks) > limit:
             log.info("单轮上限 %d 首,本轮截断 %d 首,余量下轮继续", limit, len(tasks) - limit)
             tasks = tasks[:limit]
-        summary["added"] = sum(1 for _, _, k in tasks if k == "new")
-        summary["upgraded"] = sum(1 for _, _, k in tasks if k == "upgrade")
+        summary["added"] = sum(1 for _, _, k, _ in tasks if k == "new")
+        summary["upgraded"] = sum(1 for _, _, k, _ in tasks if k == "upgrade")
         log.info("待下载 %d(新增 %d / 升级 %d)", len(tasks), summary["added"], summary["upgraded"])
 
         # 4) 磁盘空间预检
@@ -257,7 +319,8 @@ class SyncEngine:
                 out.setdefault(sid, (name, pos))
         return out
 
-    def _build_meta(self, sid: int, detail: dict, member: tuple[str, int]) -> dict:
+    def _build_meta(self, sid: int, detail: dict, member: tuple[str, int],
+                    platform: str = "netease", platform_id: str | None = None) -> dict:
         d = detail or {}
         artists = [a.get("name") for a in (d.get("ar") or d.get("artists") or []) if a.get("name")]
         al = d.get("al") or d.get("album") or {}
@@ -297,7 +360,8 @@ class SyncEngine:
     def _download_all(self, tasks, details: dict[int, dict], summary: dict) -> None:
         """并发下载。流地址在任务内即时获取(取到立刻用),
         避免预取排队导致 CDN 签名链接过期(403)。"""
-        kind_of = {sid: kind for sid, _, kind in tasks}
+        kind_of = {sid: kind for sid, _, kind, _ in tasks}
+        plat_of = {sid: plat for sid, _, _, plat in tasks}
         total = len(tasks)
 
         conc = max(1, int(self.cfg.d["limits"].get("download_concurrency") or 3))
@@ -307,8 +371,9 @@ class SyncEngine:
         pool = ThreadPoolExecutor(max_workers=conc)
         try:
             futs = {
-                pool.submit(self._download_one, sid, lvl, kind_of[sid], details.get(sid) or {}): sid
-                for sid, lvl, kind in tasks
+                pool.submit(self._download_one, sid, lvl, kind_of[sid],
+                            details.get(sid) or {}, plat_of[sid]): sid
+                for sid, lvl, kind, plat in tasks
             }
             for fut in as_completed(futs):
                 done += 1
@@ -345,83 +410,107 @@ class SyncEngine:
             if total:
                 a["total"] = total
 
-    def _fetch_lyric(self, sid: int) -> tuple[str, bool]:
+    def _fetch_lyric(self, meta: dict, sid: int) -> tuple[str, bool]:
         """返回 (歌词文本, 是否成功)。yrc 开启时优先逐字歌词,失败回退普通歌词。"""
-        if self.cfg.d["lyrics"].get("yrc"):
-            y = self.api.lyric_new(sid)
+        plat = meta.get("platform") or "netease"
+        prov = self._prov_by_platform(plat)
+        raw = meta.get("platform_id") or str(sid)
+        if self.cfg.d["lyrics"].get("yrc") and hasattr(prov, "lyric_new"):
+            y = prov.lyric_new(raw)
             if y:
                 return yrc.yrc_to_lrc(y), True
-        lr = self.api.lyric(sid)
+        lr = prov.lyric(raw)
         if lr is None:
             return "", False
         return lr, True
 
-    def _download_one(self, sid: int, want_level: str, kind: str, detail: dict) -> dict:
+    def _download_one(self, sid: int, want_level: str, kind: str, detail: dict,
+                      platform: str = "netease") -> dict:
+        provider = self._prov_by_platform(platform)
         members = self._membership([sid])
-        meta = self._build_meta(sid, detail, members.get(sid, ("未命名歌单", 0)))
-        info = self._album_info(detail)
+        meta = self._build_meta(sid, detail, members.get(sid, ("未命名歌单", 0)), platform)
+        info = self._album_info(meta, detail)
         meta["genre"] = self._genre_of(info)
         meta["label"] = str(info.get("company") or "")
         fail = lambda reason: {"ok": False, "title": meta["title"], "artist": meta["artist"], "reason": reason}  # noqa: E731
 
-        # 取流:按音质协商结果逐档降档;即时取即时用,避免 CDN 签名链接排队过期(403)
-        entry = None
-        for lvl in quality.chain_from(want_level, self.cfg.quality_chain):
-            try:
-                e = self.api.song_url(sid, lvl)
-            except ApiError:
-                continue
-            if e.get("url") and not e.get("freeTrialInfo"):
-                entry = e
-                break
-        if not entry:
-            return fail("无可用音源(试听或下架)")
-
-        # 下载;403/410 视为签名链接过期或失效,自动重取一次新链接重试
-        for attempt in (1, 2):
+        if hasattr(provider, "download_audio"):  # yt-dlp 引擎(B 站)
             self.active[sid] = {"title": meta["title"], "artist": meta["artist"],
-                                "downloaded": 0, "total": int(entry.get("size") or 0)}
+                                "downloaded": 0, "total": 0}
             try:
-                try:
-                    tmp, md5hex, size = downloader.download(
-                        entry["url"], self.tmp_dir,
-                        progress=lambda dn, dt: self._dl_tick(sid, dn, dt),
-                        proxy=self.cfg.d["limits"].get("proxy") or None)
-                    break
-                finally:
-                    self.active.pop(sid, None)
-            except httpx.HTTPStatusError as e:
-                code = e.response.status_code if e.response is not None else 0
-                if attempt == 1 and code in (403, 410):
-                    try:
-                        e2 = self.api.song_url(sid, str(entry.get("level") or want_level))
-                    except ApiError:
-                        return fail(f"下载失败:HTTP {code}")
-                    if e2.get("url") and not e2.get("freeTrialInfo"):
-                        entry = e2
-                        continue
-                return fail(f"下载失败:HTTP {code}" if code else f"下载失败:{e.__class__.__name__}")
+                real, size = provider.download_audio(
+                    meta["platform_id"], self.tmp_dir,
+                    progress_cb=lambda dn, dt: self._dl_tick(sid, dn, dt))
+                ext = real.suffix.lstrip(".").lower() or "m4a"
+                md5hex, level, entry_br = "", "bestaudio", 0
+            except _Fail as e:
+                return fail(e.reason)
             except Exception as e:
                 return fail(f"下载失败:{e.__class__.__name__}")
-        else:  # 两次尝试均未成功落盘
-            return fail("下载失败:重试后仍失败")
-        if not downloader.verify(tmp, str(entry.get("md5") or ""), int(entry.get("size") or 0)):
-            tmp.unlink(missing_ok=True)
-            return fail("校验失败(MD5/大小不符)")
+            finally:
+                self.active.pop(sid, None)
+        else:  # URL 取流引擎(网易云 / QQ)
+            chain = self.cfg.quality_chain if platform == "netease" else provider.level_chain
+            entry = None
+            for lvl in provider.chain_from(want_level, chain):
+                try:
+                    e = provider.song_url(meta["platform_id"], lvl, detail)
+                except ApiError:
+                    continue
+                if e.get("url") and not e.get("freeTrialInfo"):
+                    entry = e
+                    break
+            if not entry:
+                return fail("无可用音源(试听或下架)")
 
-        ext = str(entry.get("type") or "mp3").lower()
-        real = tmp.with_suffix(f".{ext}")
-        tmp.rename(real)
+            # 下载;403/410 视为签名链接过期或失效,自动重取一次新链接重试
+            for attempt in (1, 2):
+                self.active[sid] = {"title": meta["title"], "artist": meta["artist"],
+                                    "downloaded": 0, "total": int(entry.get("size") or 0)}
+                try:
+                    try:
+                        tmp, md5hex, size = downloader.download(
+                            entry["url"], self.tmp_dir,
+                            progress=lambda dn, dt: self._dl_tick(sid, dn, dt),
+                            headers=provider.download_headers(),
+                            proxy=self.cfg.d["limits"].get("proxy") or None)
+                        break
+                    finally:
+                        self.active.pop(sid, None)
+                except httpx.HTTPStatusError as e:
+                    code = e.response.status_code if e.response is not None else 0
+                    if attempt == 1 and code in (403, 410):
+                        try:
+                            e2 = provider.song_url(meta["platform_id"],
+                                                   str(entry.get("level") or want_level), detail)
+                        except ApiError:
+                            return fail(f"下载失败:HTTP {code}")
+                        if e2.get("url") and not e2.get("freeTrialInfo"):
+                            entry = e2
+                            continue
+                    return fail(f"下载失败:HTTP {code}" if code else f"下载失败:{e.__class__.__name__}")
+                except Exception as e:
+                    return fail(f"下载失败:{e.__class__.__name__}")
+            else:  # 两次尝试均未成功落盘
+                return fail("下载失败:重试后仍失败")
+            if not downloader.verify(tmp, str(entry.get("md5") or ""), int(entry.get("size") or 0)):
+                tmp.unlink(missing_ok=True)
+                return fail("校验失败(MD5/大小不符)")
+            ext = str(entry.get("type") or "mp3").lower()
+            real = tmp.with_suffix(f".{ext}")
+            tmp.rename(real)
+            level = str(entry.get("level") or want_level)
+            entry_br = int(entry.get("br") or 0)
 
         # 次要失败收集:歌词/封面/标签/NFO 任一失败记为「部分未成功」,不影响下载成功判定
         warns: list[str] = []
         lrc = ""
         if self.cfg.d["lyrics"].get("lrc", True) or self.cfg.d["lyrics"].get("embed", True):
-            lrc, lrc_ok = self._fetch_lyric(sid)
+            lrc, lrc_ok = self._fetch_lyric(meta, sid)
             if not lrc_ok:
                 warns.append("歌词获取失败")
         al_pic = ((detail or {}).get("al") or {}).get("picUrl")
-        cover = self._cover_for(detail) if al_pic else None
+        cover = self._cover_for(meta, detail) if al_pic else None
         if al_pic and cover is None:
             warns.append("封面获取失败")
         tag_warn = tagger.tag_file(real, meta, cover, lrc if self.cfg.d["lyrics"].get("embed", True) else None)
@@ -440,8 +529,8 @@ class SyncEngine:
         self.state.upsert_song(
             sid=sid, title=meta["title"], artist=meta["artist"], album=meta["album"],
             file_path=str(final), ext=ext, track_no=int(meta.get("track") or 0),
-            level=str(entry.get("level") or want_level),
-            br=int(entry.get("br") or 0), size=size, md5=md5hex,
+            level=str(level),
+            br=int(entry_br), size=size, md5=md5hex,
             downloaded_at=now_str(), status="ok", fail_count=0, last_error="",
         )
         if self.cfg.d.get("nfo", True):
@@ -450,14 +539,14 @@ class SyncEngine:
             except Exception as e:
                 warns.append("NFO 写入失败")
                 log.warning("NFO 写入失败 %s: %s", final.parent, e)
-        log.info("[%s] %s - %s (%s)", kind, meta["artist"], meta["title"], entry.get("level") or want_level)
-        return {"ok": True, "kind": kind, "level": str(entry.get("level") or want_level),
+        log.info("[%s] %s - %s (%s)", kind, meta["artist"], meta["title"], level)
+        return {"ok": True, "kind": kind, "level": str(level),
                 "title": meta["title"], "artist": meta["artist"], "warns": warns}
 
     def _write_nfo(self, final: Path, meta: dict, detail: dict) -> None:
         """单曲 <歌名>.nfo(所有布局都写);专辑/歌手级 NFO 跟随布局目录结构。"""
         d = detail or {}
-        info = self._album_info(detail)
+        info = self._album_info(meta, detail)
         releasedate = ""
         if info.get("publishTime"):
             try:
@@ -475,6 +564,7 @@ class SyncEngine:
             track=int(meta.get("track") or 0), disc=int(meta.get("disc") or 0),
             year=str(meta.get("date") or ""), duration=int((d.get("dt") or 0) // 1000),
             genre=str(genre), ncm_id=str(meta.get("sid") or ""),
+            platform=str(meta.get("platform") or "netease"),
         )
         if self.cfg.layout == "album":
             album_dir = final.parent
@@ -490,24 +580,28 @@ class SyncEngine:
                 plot=str(info.get("description") or ""), tracks=tracks,
             )
             nfo.write_artist_nfo(album_dir.parent / "artist.nfo", name=meta["album_artist"],
-                                 genre=str(genre), ncm_id=ncm_aid)
+                                 genre=str(genre), ncm_id=ncm_aid,
+                                 platform=str(meta.get("platform") or "netease"))
         elif self.cfg.layout == "artist":
             nfo.write_artist_nfo(final.parent / "artist.nfo", name=meta["album_artist"],
-                                 genre=str(genre), ncm_id=ncm_aid)
+                                 genre=str(genre), ncm_id=ncm_aid,
+                                 platform=str(meta.get("platform") or "netease"))
         # flat/playlist 布局无歌手/专辑目录结构,不写这两级 NFO
 
-    def _album_info(self, detail: dict) -> dict:
-        """专辑详情(流派/厂牌/发行日/简介),按专辑 ID 缓存。"""
+    def _album_info(self, meta: dict, detail: dict) -> dict:
+        """专辑详情(流派/厂牌/发行日/简介),按 平台+专辑 ID 缓存;无该能力的平台返回空。"""
+        platform = meta.get("platform") or "netease"
         al = (detail or {}).get("al") or {}
-        aid = al.get("id")
-        if aid is None:
+        aid = str(al.get("id") or "")
+        if not aid or aid == "0":
             return {}
-        if aid not in self._album_cache:
+        key = f"{platform}:{aid}"
+        if key not in self._album_cache:
             try:
-                self._album_cache[aid] = self.api.album(aid).get("album") or {}
-            except ApiError:
-                self._album_cache[aid] = {}
-        return self._album_cache[aid] or {}
+                self._album_cache[key] = self._prov_by_platform(platform).album_info(detail) or {}
+            except Exception:
+                self._album_cache[key] = {}
+        return self._album_cache[key] or {}
 
     @staticmethod
     def _genre_of(info: dict) -> str:
@@ -516,23 +610,24 @@ class SyncEngine:
             return ", ".join(str(x) for x in g)
         return str(g or "")
 
-    def _cover_for(self, detail: dict) -> bytes | None:
+    def _cover_for(self, meta: dict, detail: dict) -> bytes | None:
         al = (detail or {}).get("al") or {}
-        aid = al.get("id")
-        if aid is None:
+        url = al.get("picUrl") or ""
+        if not url:
             return None
-        if aid in self._cover_cache:
-            return self._cover_cache[aid]
-        url = al.get("picUrl")
+        key = f"{meta.get('platform')}:{url}"
+        if key in self._cover_cache:
+            return self._cover_cache[key]
         data = None
-        if url:
-            try:
-                r = self.api.client.get(f"{url}?param=1500y1500")
-                if r.status_code == 200 and r.content[:2] in (b"\xff\xd8", b"\x89P"):
-                    data = r.content
-            except Exception:
-                data = None
-        self._cover_cache[aid] = data
+        try:
+            fetch_url = f"{url}?param=1500y1500" if meta.get("platform") == "netease" else url
+            prov = self._prov_by_platform(meta.get("platform"))
+            r = prov.client.get(fetch_url, headers=prov.download_headers(), timeout=30)
+            if r.status_code == 200 and r.content[:2] in (b"\xff\xd8", b"\x89P"):
+                data = r.content
+        except Exception:
+            data = None
+        self._cover_cache[key] = data
         return data
 
     # ---------- 本地音乐列表 / 刮削 / 编辑 ----------
@@ -615,10 +710,12 @@ class SyncEngine:
             })
         return sorted(out, key=lambda x: x["path"].casefold())
 
-    def _scrape(self, sid: int, p: Path, detail: dict) -> dict:
-        """用网易云元数据补全本地文件:标签/封面/歌词/NFO;按「刮削分类」整理到规范位置并入库。"""
-        meta = self._build_meta(sid, detail, ("未命名歌单", 0))
-        info = self._album_info(detail)
+    def _scrape(self, sid: int, p: Path, detail: dict, platform: str = "netease",
+                platform_id: str | None = None) -> dict:
+        """用平台元数据补全本地文件:标签/封面/歌词/NFO;按布局整理到规范位置并入库。"""
+        meta = self._build_meta(sid, detail, ("未命名歌单", 0), platform,
+                                platform_id or str(detail.get("_pid") or ""))
+        info = self._album_info(meta, detail)
         meta["genre"] = self._genre_of(info)
         meta["label"] = str(info.get("company") or "")
         warns: list[str] = []
@@ -628,11 +725,11 @@ class SyncEngine:
 
         lrc = ""
         if self.cfg.d["lyrics"].get("lrc", True) or self.cfg.d["lyrics"].get("embed", True):
-            lrc, lrc_ok = self._fetch_lyric(sid)
+            lrc, lrc_ok = self._fetch_lyric(meta, sid)
             if not lrc_ok:
                 warns.append("歌词获取失败")
         al_pic = ((detail or {}).get("al") or {}).get("picUrl")
-        cover = self._cover_for(detail) if al_pic else None
+        cover = self._cover_for(meta, detail) if al_pic else None
         if al_pic and cover is None:
             warns.append("封面获取失败")
         tw = tagger.tag_file(p, meta, cover, lrc if self.cfg.d["lyrics"].get("embed", True) else None)
@@ -698,15 +795,18 @@ class SyncEngine:
             i += 1
         return cand
 
-    def match_local_file(self, sid: int, filepath: str) -> dict:
-        """手动匹配:搜索选定的网易云曲目补全本地文件。"""
+    def match_local_file(self, sid: int, filepath: str, platform: str = "netease",
+                         platform_id: str | None = None) -> dict:
+        """手动匹配:搜索选定的平台曲目补全本地文件。"""
         p = Path(filepath)
         if not p.is_file():
             raise ValueError("文件不存在")
-        d = self.api.song_detail([sid])
+        raw = platform_id or (sid if platform == "netease" else raw_id_of(sid))
+        prov = self._prov_by_platform(platform)
+        d = prov.song_detail([raw])
         if not d:
             raise ValueError("未找到该歌曲")
-        return self._scrape(sid, p, d[0])
+        return self._scrape(sid, p, d[0], platform, raw)
 
     def refetch_local(self, filepath: str) -> dict:
         """重新刮削:已入库按原 sid 重新抓取;未入库按文件名/内嵌信息自动搜索匹配。"""
@@ -721,10 +821,14 @@ class SyncEngine:
             if not res:
                 raise ValueError("未能自动匹配到网易云曲目,请使用手动匹配")
             sid = int(res[0]["id"])
-        d = self.api.song_detail([sid])
+        row = self.state.song(sid) or {}
+        platform = row.get("platform") or "netease"
+        raw = row.get("platform_id") or (sid if platform == "netease" else raw_id_of(sid))
+        prov = self._prov_by_platform(platform)
+        d = prov.song_detail([raw])
         if not d:
             raise ValueError("未找到该歌曲")
-        return self._scrape(sid, p, d[0])
+        return self._scrape(sid, p, d[0], platform, raw)
 
     def edit_local(self, filepath: str, title: str, artist: str = "", album: str = "",
                    track: int = 0) -> dict:
@@ -733,6 +837,7 @@ class SyncEngine:
         if not p.is_file():
             raise ValueError("文件不存在")
         sid = self._path_sid(p) or self.local_sid(p)
+        platform = (self.state.song(sid) or {}).get("platform") or "netease"
         meta = {"title": title or p.stem, "artist": artist or "未知歌手",
                 "album": album or "未知专辑", "album_artist": artist or "未知歌手",
                 "track": int(track or 0), "disc": 0, "date": ""}

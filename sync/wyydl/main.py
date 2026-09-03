@@ -40,7 +40,6 @@ def build():
     engine = SyncEngine(cfg, state, api)
     return cfg, state, api, engine
 
-
 def main() -> None:
     ap = argparse.ArgumentParser("wyydl 网易云歌单同步")
     ap.add_argument("--once", action="store_true", help="执行一轮同步后退出(供 fnOS 计划任务调用)")
@@ -78,6 +77,7 @@ def main() -> None:
 
     import uvicorn
     ctx = webmod.AppContext(cfg=cfg, state=state, api=api, engine=engine,
+                            providers=engine.providers,
                             next_run=next_run, on_reschedule=reschedule)
     web = cfg.d.get("web") or {}
     port = args.port or int(web.get("port") or 8286)

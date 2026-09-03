@@ -1,6 +1,7 @@
 httpx==0.28.1
 mutagen==1.47.0
 qrcode==8.2
+yt-dlp>=2025.1.1    # B 站接口变动频繁,保持较新(不锁定的例外)
 APScheduler==3.11.3
 fastapi==0.128.8
 uvicorn==0.39.0

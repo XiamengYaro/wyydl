@@ -1,5 +1,5 @@
 appname          = wyydl
-version          = 1.11.1
+version          = 1.12.0
 display_name     = 网易云歌单同步
 desc             = 定时同步网易云音乐歌单到本地:自动协商最高音质、嵌入封面/歌词、生成 NFO 元数据,内置 Web 控制面板与飞书通知。基于 api-enhanced。仅供个人学习与备份,请尊重版权。
 platform         = all
@@ -13,4 +13,4 @@ desktop_uidir    = ui
 desktop_applaunchname = wyydl.main
 ctl_stop         = true
 checkport        = false
-changelog        = 1.11.1:版本管理切换为语义化版本(SemVer)——面板版本比较与 CI 标签校验同步;1.11.0:重复标记与失败原因;1.10.0:特殊源/逐字歌词;1.0.0:首个版本。
+changelog        = 1.12.0:多平台打通——哔哩哔哩(yt-dlp 扫码)与 QQ 音乐(扫码/Cookie)登录、歌单、下载、刮削;Provider 架构;1.11.1:SemVer;1.11.0:重复/失败原因;1.0.0:首个版本。

@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS runs(
 );
 """
 
-_SONG_FIELDS = ("sid", "title", "artist", "album", "file_path", "ext", "track_no",
+_SONG_FIELDS = ("sid", "platform", "title", "artist", "album", "file_path", "ext", "track_no",
                 "level", "br", "size", "md5", "downloaded_at", "status", "fail_count", "last_error")
 
 
@@ -62,7 +62,8 @@ class State:
             self._conn.executescript(_SCHEMA)
             for col in ("track_no INTEGER NOT NULL DEFAULT 0",
                         "fail_count INTEGER NOT NULL DEFAULT 0",
-                        "last_error TEXT NOT NULL DEFAULT ''"):
+                        "last_error TEXT NOT NULL DEFAULT ''",
+                        "platform TEXT NOT NULL DEFAULT 'netease'"):
                 try:  # 旧库迁移:补充列
                     self._conn.execute(f"ALTER TABLE songs ADD COLUMN {col}")
                 except sqlite3.OperationalError:
@@ -135,7 +136,7 @@ class State:
 
     def upsert_song(self, **kw) -> None:
         sid = int(kw["sid"])
-        row = self.song(sid) or {f: (0 if f in ("br", "size", "track_no", "fail_count") else "") for f in _SONG_FIELDS}
+        row = self.song(sid) or {f: (0 if f in ("br", "size", "track_no", "fail_count") else "netease" if f == "platform" else "") for f in _SONG_FIELDS}
         row["sid"] = sid
         for f in _SONG_FIELDS:
             v = kw.get(f)

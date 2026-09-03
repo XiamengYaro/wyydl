@@ -20,14 +20,25 @@ services:
       - "3000"
     networks: [wyydl]
 
+  qq-music-api:
+    build: https://github.com/jsososo/QQMusicApi.git
+    container_name: wyydl-qq-music-api
+    restart: unless-stopped
+    environment:
+      - PORT=3300
+    expose:
+      - "3300"
+    networks: [wyydl]
+
   wyydl-sync:
     build: ./sync
     container_name: wyydl-sync
     restart: unless-stopped
-    depends_on: [ncm-api]
+    depends_on: [ncm-api, qq-music-api]
     environment:
       - TZ=Asia/Shanghai
       - NCM_API=http://ncm-api:3000
+      - QQ_API=http://qq-music-api:3300
     ports:
       - "${wyydl_port:-8286}:8286"
     volumes:

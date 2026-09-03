@@ -51,10 +51,14 @@ def _ver_tuple(v: str) -> tuple:
 class AppContext:
     cfg: Config
     state: State
-    api: NcmApi
+    api: NcmApi                    # 网易云(兼容别名 = providers["netease"].api)
     engine: SyncEngine
+    providers: Optional[dict] = None  # {"netease":…, "qq":…, "bilibili":…}
     next_run: Callable[[], str] = lambda: ""  # noqa: E731
     on_reschedule: Callable[[], None] = lambda: None  # noqa: E731
+
+    def prov(self, platform: str):
+        return (self.providers or {}).get(platform)
 
 
 def _guard(ctx: AppContext):
@@ -82,6 +86,13 @@ def create_app(ctx: AppContext) -> FastAPI:
         for e in (ctx.cfg.d.get("playlists") or []):
             if e.get("source") in SOURCE_PID:
                 cfg_ids.add(SOURCE_PID[e["source"]])
+        from .syncer import stable_pid
+        pid_platform = {}
+        for e in (ctx.cfg.d.get("playlists") or []):
+            if e.get("source") in SOURCE_PID:
+                pid_platform[SOURCE_PID[e["source"]]] = "netease"
+            elif "id" in e:
+                pid_platform[stable_pid(e["id"])] = e.get("platform") or "netease"
         pls = []
         for p in ctx.state.playlists():
             st = stats.get(p["pid"], {})
@@ -90,8 +101,13 @@ def create_app(ctx: AppContext) -> FastAPI:
                 "ok": st.get("ok") or 0, "pending": st.get("pending") or 0,
                 "failed": st.get("bad") or 0,
                 "configured": p["pid"] in cfg_ids,
+                "platform": pid_platform.get(p["pid"], "netease"),
                 "last_sync": p["last_sync"],
             })
+        logins = {"netease": ctx.engine.cookie_ok()}
+        for plat in ("qq", "bilibili"):
+            prov = ctx.prov(plat)
+            logins[plat] = bool(prov and prov.logged_in_cached())
         prog = dict(ctx.engine.progress or {})
         prog["recent"] = list(getattr(ctx.engine, "recent", []))[-8:]
         prog["active"] = list(getattr(ctx.engine, "active", {}).values())[:10]
@@ -105,7 +121,8 @@ def create_app(ctx: AppContext) -> FastAPI:
             disk = {}
         return {
             "version": __version__,
-            "cookie_ok": ctx.engine.cookie_ok(),
+            "cookie_ok": logins["netease"],
+            "logins": logins,
             "running": ctx.engine.running,
             "progress": prog,
             "next_run": ctx.next_run(),
@@ -163,14 +180,19 @@ def create_app(ctx: AppContext) -> FastAPI:
             ctx.cfg.save()
             started = ctx.engine.try_run(None, trigger="add")
             return {"added": SOURCE_PID[source], "sync_started": bool(started)}
-        try:
-            pid = int(str(payload.get("id")).strip())
-        except (TypeError, ValueError, AttributeError):
-            raise HTTPException(status_code=400, detail="歌单 ID 必须是数字")
-        if any(int(p.get("id", -1)) == pid for p in pls):
+        platform = str(payload.get("platform") or "netease")
+        raw_id = str(payload.get("id") or "").strip()
+        if not raw_id:
+            raise HTTPException(status_code=400, detail="歌单 ID/链接不能为空")
+        from .syncer import stable_pid
+        pid = int(raw_id) if platform == "netease" else stable_pid(raw_id)
+        if any(p.get("id") == (pid if platform == "netease" else raw_id) for p in pls):
             raise HTTPException(status_code=409, detail="该歌单已存在")
         name = str(payload.get("name") or "").strip()
-        pls.append({"id": pid, **({"name": name} if name else {})})
+        entry = {"platform": platform, "id": pid if platform == "netease" else raw_id}
+        if name:
+            entry["name"] = name
+        pls.append(entry)
         ctx.cfg.save()
         started = ctx.engine.try_run([pid], trigger="add")  # 加入后立即同步一次
         return {"added": pid, "sync_started": bool(started)}
@@ -223,16 +245,6 @@ def create_app(ctx: AppContext) -> FastAPI:
             out.append({"id": pid, "name": p.get("name") or str(pid),
                         "total": p.get("trackCount") or 0, "configured": pid in configured})
         return {"uid": uid, "playlists": out}
-
-    @app.delete("/api/playlists/{pid}", dependencies=[Depends(guard)])
-    def remove_playlist(pid: int) -> dict:
-        pls = ctx.cfg.d.get("playlists") or []
-        if not any(int(p.get("id", -1)) == pid for p in pls):
-            raise HTTPException(status_code=404, detail="歌单不存在")
-        ctx.cfg.d["playlists"] = [p for p in pls if int(p.get("id", -1)) != pid]
-        ctx.cfg.save()
-        ctx.state.remove_playlist(pid)  # 本地文件保留,仅解除关联
-        return {"removed": pid}
 
     # ---------- 扫码登录 ----------
     @app.post("/api/login/qr", dependencies=[Depends(guard)])
@@ -354,6 +366,39 @@ def create_app(ctx: AppContext) -> FastAPI:
         ctx.on_reschedule()
         return {"saved": True}
 
+    # ---------- 多平台登录(QQ / 哔哩哔哩) ----------
+    @app.post("/api/login/{platform}/qr", dependencies=[Depends(guard)])
+    def login_qr_platform(platform: str) -> dict:
+        prov = ctx.prov(platform)
+        if not prov or not hasattr(prov, "login_qr_start"):
+            raise HTTPException(status_code=404, detail="该平台不支持扫码登录")
+        d = prov.login_qr_start()
+        return {"key": d.get("key"), "img": d.get("img"), "url": d.get("url")}
+
+    @app.get("/api/login/{platform}/poll/{key}", dependencies=[Depends(guard)])
+    def login_poll_platform(platform: str, key: str) -> dict:
+        prov = ctx.prov(platform)
+        if not prov or not hasattr(prov, "login_qr_poll"):
+            raise HTTPException(status_code=404, detail="该平台不支持扫码登录")
+        r = prov.login_qr_poll(key)
+        if r.get("saved"):
+            prov.invalidate_login_cache()
+        return {"code": int(r.get("code") or 0), "message": r.get("message") or "",
+                "saved": bool(r.get("saved"))}
+
+    @app.post("/api/login/{platform}/cookie", dependencies=[Depends(guard)])
+    async def login_cookie_platform(platform: str, payload: dict) -> dict:
+        if platform not in ("qq", "bilibili"):
+            raise HTTPException(status_code=404, detail="该平台不支持 Cookie 登录")
+        cookie = str(payload.get("cookie") or "").strip()
+        if not cookie:
+            raise HTTPException(status_code=400, detail="Cookie 不能为空")
+        cfgmod.save_secret("bili" if platform == "bilibili" else "qq", cookie)
+        prov = ctx.prov(platform)
+        if prov:
+            prov.invalidate_login_cache()
+        return {"saved": True}
+
     # ---------- 配置 ----------
     @app.get("/api/config", dependencies=[Depends(guard)])
     def get_config() -> dict:
@@ -391,24 +436,44 @@ def create_app(ctx: AppContext) -> FastAPI:
         return {"files": ctx.engine.local_files()}
 
     @app.get("/api/search", dependencies=[Depends(guard)])
-    def search_songs(keywords: str = "", limit: int = 15) -> dict:
+    def search_songs(keywords: str = "", limit: int = 10) -> dict:
+        """跨平台聚合搜索(网易云 / QQ / 哔哩哔哩)。"""
         kw = keywords.strip()
         if not kw:
             return {"songs": []}
+        per = max(3, min(30, limit))
         out = []
-        for s in ctx.api.search(kw, min(30, max(1, limit))):
-            artists = " / ".join(a.get("name") for a in (s.get("ar") or []) if a.get("name"))
-            out.append({
-                "id": s.get("id"), "name": s.get("name") or "", "artists": artists,
-                "album": (s.get("al") or {}).get("name") or "",
-                "duration": int((s.get("dt") or 0) // 1000),
-            })
-        return {"songs": out}
+
+        def _add(platform: str, songs: list[dict]):
+            for t in songs[:per]:
+                out.append({
+                    "platform": platform,
+                    "sid": (ctx.providers or {}).get(platform).sid(str(t["_pid"] or t["id"])) if platform != "netease" else int(t["id"]),
+                    "platform_id": str(t["_pid"] or t["id"]),
+                    "name": t.get("name") or "",
+                    "artists": " / ".join(a.get("name") for a in (t.get("ar") or []) if a.get("name")),
+                    "album": (t.get("al") or {}).get("name") or "",
+                    "duration": int((t.get("dt") or 0) // 1000),
+                })
+
+        try:
+            _add("netease", ctx.api.search(kw, per))
+        except Exception as e:
+            log.warning("网易搜索失败:%s", e)
+        for plat in ("qq", "bilibili"):
+            prov = ctx.prov(plat)
+            if not prov:
+                continue
+            try:
+                _add(plat, prov.search(kw, per))
+            except Exception as e:
+                log.warning("%s 搜索失败:%s", plat, e)
+        return {"songs": out[:limit * 3]}
 
     @app.post("/api/local/match", dependencies=[Depends(guard)])
     async def match_local(body: MatchBody) -> dict:
         try:
-            return ctx.engine.match_local_file(body.sid, body.path)
+            return ctx.engine.match_local_file(body.sid, body.path, body.platform, body.platform_id)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"匹配失败:{e}")
 
@@ -436,6 +501,8 @@ class SyncBody(BaseModel):
 class MatchBody(BaseModel):
     sid: int
     path: str
+    platform: str = "netease"
+    platform_id: Optional[str] = None
 
 
 class PathBody(BaseModel):

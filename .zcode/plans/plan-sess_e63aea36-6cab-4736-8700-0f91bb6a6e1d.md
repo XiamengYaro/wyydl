@@ -1,39 +1,48 @@
-## wyydl 1.10.0 改造计划(四方向全选)
+## 多平台打通计划:QQ 音乐 + 哔哩哔哩(登录/歌单/下载/刮削)
 
-版本按规范升 **1.9.1 → 1.10.0**(功能更新),同步 `fpk/manifest`、`sync/wyydl/__init__.py`、CHANGELOG,重建 fpk,推 `v1.10.0` 触发 CI。
+**可行性结论**:可以。B 站走 **yt-dlp**(原生支持 B 站视频/音频/收藏夹/合集/UP主/搜索,扫码登录走 B 站 passport 二维码 API);QQ 音乐走 **QQMusicApi 容器**(jsososo/QQMusicApi,Express 服务,自带 Dockerfile,支持 Cookie/扫码登录、歌单、vkey 取流、歌词、搜索)。两者均以**扫码优先、Cookie 兜底**。
 
-### A. 工程健壮性
-1. **`.dockerignore`**(新增 `sync/.dockerignore`):排除 `data/`、`tests/`、`__pycache__/`、`*.pyc`、`*.log`,缩小 build context。
-2. **锁定依赖**:查当前 venv `pip freeze` 得到实测版本,将 `requirements.txt` 改为 `==` 固定(7 个依赖)。
-3. **CI 自动发布 Docker 镜像到 GHCR**:
-   - `release.yml` 增加 buildx 步骤(登录 `ghcr.io` 用 GITHUB_TOKEN,`docker/setup-buildx-action` + `docker/build-push-action`),多架构 `linux/amd64,linux/arm64`,标签 `v*` 与 `latest`;镜像 `ghcr.io/xiamengyaro/wyydl-sync`。
-   - 通用 `docker-compose.yml`:wyydl-sync 增加 `image: ghcr.io/xiamengyaro/wyydl-sync:latest` 并保留 `build: ./sync`(注释说明二选一,pull 模式免本地构建)。
-   - fpk 保持本地 build(内含源码上下文,不依赖镜像发布)。
-4. **单轮下载上限**:`config.limits.max_per_run`(默认 0=不限);`_run` 规划任务时按上限截断,未处理部分下轮继续(增量天然续跑)。
-5. **失败退避**:`songs` 表加 `fail_count` 列(沿用现有 ALTER TABLE 迁移模式);每次整首失败 +1、成功清零;`fail_count>=3` 且距上次尝试 <24h 的曲目本轮跳过(下轮再试),避免对同一批坏歌反复请求。
+单版本交付 **1.12.0**(SemVer 次版本:向后兼容的新功能),内含三个阶段。
 
-### B. 面板体验
-6. **本地音乐搜索/筛选**:`renderLocal()` 加搜索框,按 标题/歌手/专辑/文件名 包含过滤(前端过滤,数据已全量);保留“仅显示缺失”开关。
-7. **刮削后 m3u8 即时刷新**:`_scrape`(match/refetch/edit 共用)成功后调用 `_export_m3u8()`(幂等)。
-8. **`_trash` 自动清理**:新增 `config.trash_retention_days`(默认 30);每轮同步时清理 `_trash` 下超过保留期的文件,并同步 DB 置 `removed` 状态不变。
-9. **磁盘空间提示**:
-   - 下载前 `shutil.disk_usage(music_root)`;剩余 < `config.limits.min_free_space`(GB,默认 2)时跳过该轮下载并记入通知;
-   - `/api/status` 增加 `disk: {free_gb, total_gb, free_pct}`,面板歌单卡片上方显示可用空间。
-10. **面板新版本检测**:`web.py` 新增 `GET /api/upgrade`(调 GitHub latest release API,失败静默);前端顶栏在有新版本时显示“新版本 vX 可用”链接(指向 Releases)。
+---
 
-### C. 数据来源扩展(特殊“歌单”源)
-11. `api.py` 新增:`user_cloud()`(/user/cloud 分页)、`recommend_songs()`(/recommend/songs)、`personal_fm()`(/personal_fm)。
-12. `config.playlists` 支持条目 `{"source": "cloud" | "daily" | "fm"}`(id 可省略);面板“添加歌单”旁加「添加特殊源」下拉(云盘/每日推荐/私人 FM)。
-13. `syncer._run` 按条目的 `source` 字段分派拉取(云盘需再经 song_detail 补详情),曲目 id 汇入同一去重下载流程;特殊源同样生成 m3u8(名称如“云盘/每日推荐/私人FM”),不参与 mirror 删除。
-14. **逐字歌词**:`config.lyrics.yrc`(默认 false);开启时用 `/lyric/new` 的 `yrc` 字段做 yrc→LRC 简单转换(按行时间戳+全文),替代普通 `/lyric`,失败回退普通歌词。
-15. **代理下载**:`config.limits.proxy`(可选);`downloader.download` 透传 `proxy=` 给 httpx(仅 CDN 下载请求使用,API 请求仍直连)。
+### 阶段 0:平台抽象重构(前置,行为不变)
 
-### D. 清理
-16. 保留 `song_url_batch`(仍有单元素调用方,不做激进删除);仅在代码注释标注批量能力已不再使用。
+当前代码为网易云硬编码(已核实:NcmApi 被 main/web/qrlogin/syncer 四处引用;音质档位/privilege/al-ar 字段/QR 登录端点/sid 全局主键均为网易专属;songs 表无 platform 列)。
+
+1. 新增 `providers/base.py`:Provider 接口(登录状态/扫码流/列举目标/拉曲目/歌曲详情/取流/歌词/专辑信息/搜索),统一中性 TrackMeta(标题/歌手/专辑/封面/时长/可用音质档/扩展字段)。
+2. `providers/netease.py`:现有 NcmApi 逻辑包装为 NetEaseProvider(ncm-api 容器不变)。
+3. `quality.py`:档位表按平台提供(网易 10 档不变;QQ:128/320/flac/hires;B 站:bestaudio 单档)。
+4. **sid 分段避免跨平台冲突**(不重建表):网易 sid 原样;QQ = 1e12 + qmid;B 站 = 2e12 + aid;本地文件负数 sid 不变。`songs` 表加 `platform` 列(默认 netease,迁移复用现有 ALTER 模式)。
+5. `tagger.py`/`nfo.py`:ID 字段通用化(按平台写 `<uniqueid type="netease|qq|bilibili">`,MP3 TXXX 改 `SOURCE_SONG_ID` 并兼容旧值);`downloader` 的 Referer/UA 由 Provider 提供。
+6. `web.py` **修复既有 bug:重复路由 `remove_playlist`(web.py:178 与 227 同名覆盖,特殊源删除分支实际失效)**。
+7. 登录凭证改为按平台存 secret.yaml:`music_u`(现有)、`bili`、`qq`。验收:smoke 全绿、现有行为回归不变。
+
+### 阶段 1:哔哩哔哩 Provider(yt-dlp + 扫码)
+
+1. Dockerfile 增装 `ffmpeg` 与 `yt-dlp`。
+2. `providers/bilibili.py`:
+   - **扫码登录**:B 站 passport 二维码 API(web/qrcode/generate + poll),面板展示二维码轮询,成功后保存 SESSDATA 等 Cookie;登录校验用 nav 接口。
+   - **来源类型**:收藏夹(fid/链接)、合集、UP 主空间、单个 BV/av 链接——`yt-dlp --flat-playlist -J` 列举(带 Cookie)。
+   - **下载**:`yt-dlp -f bestaudio`(带 Cookie)输出到 tmp,后续走统一打标/NFO/布局管线。
+   - 元数据:标题/UP 主(→歌手)/封面/时长/B 站 ID;流派厂牌天然缺失留空(不计部分未成功告警)。
+3. 面板:添加来源支持粘贴 B 站链接/收藏夹;登录区 B 站二维码;歌单行平台徽标。
+
+### 阶段 2:QQ 音乐 Provider(QQMusicApi 容器)
+
+1. Compose/fpk 新增 `qq-music-api` 容器(jsososo/QQMusicApi 构建),CI 同步发布该镜像到 GHCR。
+2. `providers/qq.py`:
+   - **扫码登录**(QQMusicApi QR 端点,实施时验证;不可用降级 Cookie 粘贴),Cookie 存 secret.yaml `qq`。
+   - 用户歌单列表/曲目/取流(vkey;128/320/flac/hires 按绿钻权限映射统一档位)/歌词/搜索/封面。
+3. 面板:QQ 登录状态、扫码/Cookie 双入口。
+
+### 统一能力(对三个平台全部生效)
+
+四种下载布局、m3u8(按平台+来源命名)、通知事件、失败原因/重复标记、部分未成功、本地列表刮削(匹配源=当前文件平台;跨平台用聚合搜索)——QQ/B 站缺失流派厂牌时 NFO 字段留空(平台信息天然缺失,不告警)。同曲多平台各存一份(按 平台+sid)。
 
 ### 验证与发布
-- smoke 新增用例:特殊源分派、失败退避(fail_count 迁移/跳过逻辑)、max_per_run 截断、yrc 转换、代理透传(仅参数)。
-- 全量跑 `compileall` + `tests.smoke`(预计 72+ 项);重建 `wyydl.fpk`;提交、rebase 远端网页提交后推送 main、打 `v1.10.0` 标签,确认 CI 构建成功、Release 挂 fpk、GHCR 镜像推送成功。
-- README 更新:新配置项(limits/trash/yrc/proxy)、特殊源说明、Compose 镜像二选一。
 
-风险提示:GHCR 多架构推送与 fpk 本地构建互不影响;DB 迁移(新增列)对既有部署自动生效;特殊源依赖网易接口稳定性,失败自动降级为普通歌单逻辑。
+- smoke:网易全量回归不变 + Provider 映射、sid 分段、B 站扫码/列举 mock、QQ 取流 mock、路由修复;预计 84+ 项。
+- 版本 **1.12.0**(SemVer 次版本);CHANGELOG/README(多平台说明、登录方式与会员音质限制);fpk 与 Compose 增 qq-music-api 容器;推 `v1.12.0` → CI 构建 fpk + 双镜像(多架构)发布。
+
+**风险**:QQ 第三方 API 活跃度一般、风控较严(扫码可能降级 Cookie);B 站接口变动频繁(yt-dlp 社区跟进快);高音质依赖会员(QQ 绿钻/B 站大会员);同曲多平台各存一份占空间。

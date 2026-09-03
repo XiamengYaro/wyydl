@@ -17,6 +17,7 @@ ENV_MAP = {
 DEFAULTS: dict = {
     "schedule": "0 4 * * *",          # cron: 每天凌晨 4 点
     "api_base": os.environ.get("NCM_API", "http://ncm-api:3000"),
+    "qq_api": os.environ.get("QQ_API", "http://qq-music-api:3300"),
     "layout": "album",                # album=按专辑分类 | artist=按歌手分类 | flat=歌曲平铺 | playlist=按歌单分文件夹
     "naming": "",                     # 留空用 layout 对应默认模板
     "playlists": [],                  # [{"id": 123, "name": "可选自定义名"}]
@@ -71,6 +72,7 @@ LOG_DIR = _dir("logs")
 MUSIC_DIR = _dir("music")
 
 CONFIG_FILE = CONFIG_DIR / "config.yaml"
+QQ_API = os.environ.get("QQ_API", "http://qq-music-api:3300")
 SECRET_FILE = CONFIG_DIR / "secret.yaml"
 
 
@@ -142,17 +144,33 @@ class Config:
 
 
 def load_music_u() -> str | None:
+    return load_secret("music_u")
+
+
+def save_music_u(token: str) -> None:
+    save_secret("music_u", token)
+
+
+def load_secret(key: str) -> str | None:
+    """按平台读取登录凭证(secret.yaml 多键:music_u / qq / bili)。"""
     if not SECRET_FILE.exists():
         return None
     try:
         data = yaml.safe_load(SECRET_FILE.read_text(encoding="utf-8")) or {}
-        t = data.get("music_u")
-        return str(t) if t else None
+        v = data.get(key)
+        return str(v) if v else None
     except yaml.YAMLError:
         return None
 
 
-def save_music_u(token: str) -> None:
+def save_secret(key: str, value: str) -> None:
+    data = {}
+    if SECRET_FILE.exists():
+        try:
+            data = yaml.safe_load(SECRET_FILE.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            data = {}
+    data[key] = value
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    SECRET_FILE.write_text(yaml.safe_dump({"music_u": token}), encoding="utf-8")
+    SECRET_FILE.write_text(yaml.safe_dump(data), encoding="utf-8")
     os.chmod(SECRET_FILE, stat.S_IRUSR | stat.S_IWUSR)

@@ -94,6 +94,8 @@
   <span class="chip">下次运行 <b id="nextRun">-</b></span>
   <span class="chip">计划 <b id="cronTxt">-</b></span>
   <span class="chip">布局 <b id="layoutTxt">-</b></span>
+  <span class="chip" style="cursor:pointer" onclick="openLogin('qq')">QQ <b id="qqLoginTxt">-</b></span>
+  <span class="chip" style="cursor:pointer" onclick="openLogin('bilibili')">B站 <b id="biliLoginTxt">-</b></span>
   <a id="newVer" href="https://github.com/XiamengYaro/wyydl/releases" target="_blank" style="display:none" class="chip" title="前往 Releases 下载新版本">🆕 新版本可用</a>
   <span style="flex:1"></span>
   <button class="btn primary" id="btnSync">立即同步</button>
@@ -116,8 +118,13 @@
   <section class="card">
     <h2>歌单 <span class="muted" id="diskInfo" style="font-size:12px;font-weight:400"></span></h2>
     <div class="inline" style="margin-bottom:12px">
-      <input type="text" id="plId" placeholder="歌单 ID(网页版歌单地址里的数字)">
-      <input type="text" id="plName" placeholder="自定义名称(可空)" style="max-width:200px">
+      <select id="plPlatform" style="max-width:110px;width:auto">
+        <option value="netease">网易云</option>
+        <option value="qq">QQ 音乐</option>
+        <option value="bilibili">哔哩哔哩</option>
+      </select>
+      <input type="text" id="plId" placeholder="歌单 ID / 收藏夹或合集链接 / BV 号">
+      <input type="text" id="plName" placeholder="自定义名称(可空)" style="max-width:180px">
       <button class="btn" id="btnAdd">添加</button>
       <button class="btn" id="btnAcc">账号歌单</button>
       <select id="srcSel" style="max-width:150px;width:auto">
@@ -288,6 +295,8 @@ async function api(path, opt = {}) {
 
 function esc(s){return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 
+const PLAT_NAME = {netease: '网易', qq: 'QQ', bilibili: 'B站'};
+
 /* ---------- 统一提示 ---------- */
 function toast(msg, type = 'info') {
   const el = document.createElement('div');
@@ -314,6 +323,11 @@ async function refreshStatus() {
   if (s.disk && s.disk.free_gb != null) {
     $('#diskInfo').textContent = `磁盘可用 ${s.disk.free_gb}GB / ${s.disk.total_gb}GB (${s.disk.free_pct}%)`;
   }
+  const lg = s.logins || {};
+  $('#qqLoginTxt').textContent = lg.qq ? '已登录' : '未登录';
+  $('#biliLoginTxt').textContent = lg.bilibili ? '已登录' : '未登录';
+  $('#qqLoginTxt').style.color = lg.qq ? 'var(--ok)' : 'var(--dim)';
+  $('#biliLoginTxt').style.color = lg.bilibili ? 'var(--ok)' : 'var(--dim)';
   $('#btnSync').disabled = s.running;
   $('#btnSync').textContent = s.running ? '同步中…' : '立即同步';
 
@@ -349,6 +363,7 @@ async function refreshStatus() {
   $('#plBody').innerHTML = s.playlists.map(p => `
     <tr>
       <td><a href="javascript:viewTracks(${p.id},'${esc(p.name)}')">${esc(p.name || p.id)}</a>
+          <span class="tag lv">${esc(PLAT_NAME[p.platform] || p.platform || '网易')}</span>
           ${p.configured ? '' : '<span class="tag">已移除</span>'}</td>
       <td>${p.total}</td>
       <td><span class="tag ${p.ok ? 'ok' : ''}">${p.ok}</span></td>
@@ -458,11 +473,12 @@ $('#btnSync').onclick = () => confirmDo('立即同步所有已配置目标?', as
   catch (e) { toast(e.message, 'err'); }
 });
 $('#btnAdd').onclick = () => {
+  const platform = $('#plPlatform').value;
   const id = $('#plId').value.trim();
-  if (!id) return toast('请先输入歌单 ID', 'warn');
-  confirmDo(`添加歌单 ${id} 并立即开始同步吗?`, async () => {
+  if (!id) return toast('请先输入歌单 ID / 链接', 'warn');
+  confirmDo(`添加 ${PLAT_NAME[platform]}「${id}」并立即开始同步吗?`, async () => {
     try {
-      const r = await api('/api/playlists', {method: 'POST', body: {id, name: $('#plName').value}});
+      const r = await api('/api/playlists', {method: 'POST', body: {id, platform, name: $('#plName').value}});
       $('#plId').value = ''; $('#plName').value = ''; refreshStatus();
       toast(r.sync_started ? '已添加并开始同步' : '已添加,当前有任务在运行,稍后自动同步', 'ok');
     } catch (e) { toast(e.message, 'err'); }
@@ -571,6 +587,51 @@ async function startQr() {
 function stopQr() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
 $('#btnLogin').onclick = () => { $('#btnLogin').disabled = true; startQr(); };
 
+/* ---------- QQ / B站 登录 ---------- */
+const LOGIN_NAMES = {qq: 'QQ 音乐', bilibili: '哔哩哔哩'};
+async function openLogin(platform) {
+  showDialog(`<h2 style="margin:0 0 8px">登录 ${LOGIN_NAMES[platform]}</h2>
+    <div class="sect" style="margin:8px 0 4px">方式一:扫码登录</div>
+    <div style="text-align:center"><button class="btn mini" id="lgQrBtn">获取二维码</button></div>
+    <div id="lgQrArea" style="text-align:center;margin-top:8px"></div>
+    <p class="muted" id="lgMsg" style="text-align:center;margin:6px 0 0"></p>
+    <div class="sect" style="margin:12px 0 4px">方式二:粘贴 Cookie</div>
+    <textarea id="lgCookie" style="min-height:70px" placeholder="网页版登录后,从浏览器开发者工具复制 Cookie 粘贴到这里"></textarea>
+    <div style="text-align:right;margin-top:8px"><button class="btn mini primary" id="lgCookieBtn">Cookie 登录</button></div>`);
+  $('#lgQrBtn').onclick = async () => {
+    $('#lgQrArea').innerHTML = '<span class="muted">获取中…</span>';
+    try {
+      const d = await api(`/api/login/${platform}/qr`, {method: 'POST'});
+      if (!d.img) { $('#lgQrArea').innerHTML = '<span class="muted">该平台暂不支持扫码,请使用 Cookie 登录</span>'; return; }
+      $('#lgQrArea').innerHTML = `<img src="${d.img}" style="width:200px;max-height:200px;background:#fff;border-radius:8px">`;
+      $('#lgMsg').textContent = '等待扫码…';
+      const timer = setInterval(async () => {
+        try {
+          const r = await api(`/api/login/${platform}/poll/${d.key}`);
+          $('#lgMsg').textContent = r.message;
+          if (r.saved) {
+            clearInterval(timer);
+            toast(`${LOGIN_NAMES[platform]} 登录成功`, 'ok');
+            dlg.close(); refreshStatus();
+          } else if ([800, 86038].includes(r.code)) {
+            clearInterval(timer);
+            $('#lgMsg').textContent = '二维码已过期,请重新获取';
+          }
+        } catch (e) { clearInterval(timer); $('#lgMsg').textContent = '轮询出错'; }
+      }, 2000);
+      const oldClose = () => clearInterval(timer);
+      dlg.addEventListener('close', oldClose, {once: true});
+    } catch (e) { $('#lgQrArea').innerHTML = '获取失败:' + e.message; }
+  };
+  $('#lgCookieBtn').onclick = async () => {
+    try {
+      await api(`/api/login/${platform}/cookie`, {method: 'POST', body: {cookie: $('#lgCookie').value}});
+      toast(`${LOGIN_NAMES[platform]} Cookie 已保存`, 'ok');
+      dlg.close(); refreshStatus();
+    } catch (e) { toast(e.message, 'err'); }
+  };
+}
+
 /* ---------- 本地音乐列表 / 刮削 / 匹配 / 编辑 ---------- */
 let localFiles = [];
 let currentMatchPath = '';
@@ -636,16 +697,21 @@ async function doSearch(kw) {
   let d;
   try { d = await api('/api/search?keywords=' + encodeURIComponent(kw)); }
   catch (e) { return el.innerHTML = '搜索失败:' + e.message; }
-  el.innerHTML = d.songs.map(s => `
+  window._lastSearch = d.songs;
+  el.innerHTML = d.songs.map((s, i) => `
     <div class="inline" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 2px;cursor:pointer"
-         onclick="pickMatch(${s.id},'${esc(s.name)}')">
-      <span>${esc(s.name)} <span class="muted">${esc(s.artists)} · ${esc(s.album)}</span></span>
+         onclick="pickMatch(${i})">
+      <span>${esc(s.name)} <span class="muted">${esc(s.artists)} · ${esc(s.album)}</span>
+        <span class="tag lv">${esc(PLAT_NAME[s.platform] || s.platform)}</span></span>
       <button class="btn mini">匹配</button>
     </div>`).join('') || '<span class="muted">无结果</span>';
 }
-async function pickMatch(sid, name) {
+async function pickMatch(i) {
+  const s = (window._lastSearch || [])[i];
+  if (!s) return toast('搜索结果已过期,请重新搜索', 'warn');
   try {
-    const r = await api('/api/local/match', {method: 'POST', body: {sid, path: currentMatchPath}});
+    const r = await api('/api/local/match', {method: 'POST', body: {
+      sid: s.sid, path: currentMatchPath, platform: s.platform, platform_id: s.platform_id}});
     toast(`已匹配:${r.artist} - ${r.title}` + (r.warns && r.warns.length ? `\n提示:${r.warns.join('、')}` : ''), 'ok');
     dlg.close(); loadLocal();
   } catch (e) { toast(e.message, 'err'); }
