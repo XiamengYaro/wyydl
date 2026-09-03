@@ -28,7 +28,7 @@ _INDEX = Path(__file__).parent / "static" / "index.html"
 _QR_MSG = {800: "二维码已过期", 801: "等待扫码", 802: "已扫码,请在手机上确认", 803: "登录成功"}
 
 _UPGRADE_CACHE = {"ts": 0.0, "data": None}
-_UPGRADE_TTL = 3600  # 升级检查 1 小时缓存,避免 GitHub API 限频
+_UPGRADE_TTL = 21600  # 升级检查 6 小时缓存(未认证 GitHub API 每小时限频)
 
 
 def _pre_tuple(pre: str | None) -> tuple:

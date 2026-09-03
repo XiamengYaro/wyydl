@@ -29,7 +29,12 @@ class BiliProvider(BaseProvider):
         self.cookie_getter = cookie_getter
         self.cookie_saver = cookie_saver  # 回调:保存 cookie 字符串
         self.tmp_dir = tmp_dir
-        self.client = httpx.Client(timeout=30)
+        # B 站有 UA 反爬(缺浏览器 UA 会 412),客户端级挂浏览器 UA + Referer
+        self.client = httpx.Client(timeout=30, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            "Referer": "https://www.bilibili.com/",
+        })
         self._flat_cache: dict[str, dict] = {}   # 视频/音频 ID → 详情
         self._cookies_file: Path | None = None
 
@@ -99,7 +104,9 @@ class BiliProvider(BaseProvider):
 
     def _ydl_opts(self, extra: dict | None = None) -> dict:
         opts = {"quiet": True, "no_warnings": True, "socket_timeout": 30,
-                "retries": 3, "noplaylist": True}
+                "retries": 3, "noplaylist": True,
+                "http_headers": {"User-Agent": self.client.headers.get("user-agent"),
+                                 "Referer": "https://www.bilibili.com/"}}
         cf = self._cookies_file()
         if cf:
             opts["cookiefile"] = str(cf)
