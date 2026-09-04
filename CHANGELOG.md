@@ -14,6 +14,18 @@
 - 版本号**三处同步**:`fpk/manifest`、`sync/wyydl/__init__.py`、本文件;推送 `v<版本>` 标签自动构建发布(CI 校验标签与 manifest 一致、并校验标签为合法语义化版本)。
 - 纯文档/仓库内改动不涉及发布产物时,不强制递增版本号。
 
+## 1.13.0 - 2026-09-04
+
+### QQ 音乐与哔哩哔哩改为直连实现
+- **QQ 音乐**:不再需要 QQMusicApi 容器——Provider 直连腾讯接口:扫码登录(ptqrshow/ptqrlogin + hash33 token)、歌单与曲目、GetVkey 取流(音质前缀 AI00 母带→Q001→F000 FLAC→O801→M800/M500 全试取第一个可用)、搜索、歌词(musicu.fcg)。
+- **哔哩哔哩**:不再需要 yt-dlp——直连 view/playurl:收藏夹(分页)、BV/av 链接(含多 P)、取流选 Hi-Res FLAC → Dolby → 最高码率 DASH 音频 → DURL。
+- Compose 与 fpk 均移除 QQMusicApi 容器与 yt-dlp 依赖,镜像更精简。
+- 依赖新增 `pypng`(B 站扫码二维码纯 Python 生成);移除 `yt-dlp`。
+
+### 修复
+- B 站扫码「确认后不生效」:code=0 被 falsy 兜底吞掉的解析错误。
+- web.py 移除歌单存在重复路由导致特殊源删除失效的问题。
+
 ## 1.12.6 - 2026-09-04
 
 - **修复 B 站扫码确认后不生效**:轮询接口的「确认成功」状态码为 `0`,被 `code or -1` 的 falsy 兜底吞掉,导致已确认却仍显示等待直至二维码过期。已修复解析并持久化 Cookie;前端对 B 站过期码(86038)也会停止轮询提示重新获取。
