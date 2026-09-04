@@ -613,7 +613,7 @@ async function openLogin(platform) {
             clearInterval(timer);
             toast(`${LOGIN_NAMES[platform]} 登录成功`, 'ok');
             dlg.close(); refreshStatus();
-          } else if ([800, 86038].includes(r.code)) {
+          } else if ([800, 803, 86038].includes(r.code)) {
             clearInterval(timer);
             $('#lgMsg').textContent = '二维码已过期,请重新获取';
           }

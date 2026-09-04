@@ -80,16 +80,18 @@ class BiliProvider(BaseProvider):
         r = self.client.get(f"{PASSPORT}/x/passport-login/web/qrcode/poll",
                             params={"qrcode_key": key})
         j = r.json()
-        code = int((j.get("data") or {}).get("code") or -1)
+        raw_code = (j.get("data") or {}).get("code")
+        code = int(raw_code) if raw_code is not None else -1  # 注意:0=成功,不能用 or 兜底
         msg = {0: "登录成功", 86038: "二维码已过期", 86090: "已扫码,请在手机上确认",
                86101: "等待扫码"}.get(code, "等待中")
         saved = False
+        cookie = ""
         if code == 0:
             cookie = "; ".join(f"{k}={v}" for k, v in r.cookies.items())
             if cookie:
                 self.cookie_saver(cookie)
                 saved = True
-        return {"code": code, "message": msg, "saved": saved}
+        return {"code": code, "message": msg, "saved": saved, "cookie": cookie}
 
     def _cookies_file(self) -> Path | None:
         """把 Cookie 串写成 yt-dlp 需要的 Netscape cookies.txt。"""
