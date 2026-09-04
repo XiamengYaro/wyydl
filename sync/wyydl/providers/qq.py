@@ -47,7 +47,10 @@ class QQProvider(BaseProvider):
 
     def login_qr_start(self) -> dict:
         d = self._get("/login", qrcode=1)
-        return {"img": str(d.get("qrcode") or d.get("image") or ""),
+        img = str(d.get("qrcode") or d.get("image") or "")
+        if not img:
+            raise RuntimeError(f"QQ 音乐 API 未返回二维码(code={d.get('code')})")
+        return {"img": img,
                 "key": str(d.get("qrcode_str") or d.get("key") or "")}
 
     def login_qr_poll(self, key: str) -> dict:

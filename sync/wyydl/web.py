@@ -367,12 +367,28 @@ def create_app(ctx: AppContext) -> FastAPI:
         return {"saved": True}
 
     # ---------- 多平台登录(QQ / 哔哩哔哩) ----------
+    _LOGIN_HINT = {"qq": "无法连接 QQ 音乐 API 容器(qq-music-api),请按 fpk/README 启用后再试",
+                   "bilibili": "B 站接口请求失败,请稍后重试"}
+
+    def _login_call(platform: str, fn):
+        """统一兜底:平台请求异常转成可读错误,不裸 500。"""
+        try:
+            return fn()
+        except HTTPException:
+            raise
+        except Exception as e:
+            log.warning("登录调用失败(%s): %s", platform, e)
+            hint = _LOGIN_HINT.get(platform, "平台接口请求失败")
+            raise HTTPException(status_code=502, detail=f"{hint}({e.__class__.__name__})")
+
     @app.post("/api/login/{platform}/qr", dependencies=[Depends(guard)])
     def login_qr_platform(platform: str) -> dict:
         prov = ctx.prov(platform)
         if not prov or not hasattr(prov, "login_qr_start"):
             raise HTTPException(status_code=404, detail="该平台不支持扫码登录")
-        d = prov.login_qr_start()
+        d = _login_call(platform, lambda: prov.login_qr_start())
+        if not (d or {}).get("img"):
+            raise HTTPException(status_code=502, detail="平台未返回二维码,请改用 Cookie 登录")
         return {"key": d.get("key"), "img": d.get("img"), "url": d.get("url")}
 
     @app.get("/api/login/{platform}/poll/{key}", dependencies=[Depends(guard)])
@@ -380,7 +396,7 @@ def create_app(ctx: AppContext) -> FastAPI:
         prov = ctx.prov(platform)
         if not prov or not hasattr(prov, "login_qr_poll"):
             raise HTTPException(status_code=404, detail="该平台不支持扫码登录")
-        r = prov.login_qr_poll(key)
+        r = _login_call(platform, lambda: prov.login_qr_poll(key)) or {}
         if r.get("saved"):
             prov.invalidate_login_cache()
         return {"code": int(r.get("code") or 0), "message": r.get("message") or "",

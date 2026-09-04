@@ -14,6 +14,10 @@
 - 版本号**三处同步**:`fpk/manifest`、`sync/wyydl/__init__.py`、本文件;推送 `v<版本>` 标签自动构建发布(CI 校验标签与 manifest 一致、并校验标签为合法语义化版本)。
 - 纯文档/仓库内改动不涉及发布产物时,不强制递增版本号。
 
+## 1.12.4 - 2026-09-04
+
+- 平台登录(扫码/Cookie)失败不再返回裸 500:统一转为可读错误,如「无法连接 QQ 音乐 API 容器(qq-music-api),请按 fpk/README 启用后再试」。
+
 ## 1.12.3 - 2026-09-04
 
 - **修复升级解析失败**:fpk compose 中 `wyydl-sync` 服务存在重复的 `build`/`container_name`/`restart` 键(历次补丁叠加所致),fnOS 解析报 `mapping key "build" already defined`。已重写为干净版本,并新增冒烟测试守卫防止回归。
