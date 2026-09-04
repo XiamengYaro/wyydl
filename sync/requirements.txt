@@ -6,3 +6,4 @@ APScheduler==3.11.3
 fastapi==0.128.8
 uvicorn==0.39.0
 PyYAML==6.0.3
+pypng==0.20220715.0  # qrcode 纯 Python PNG 工厂(B 站二维码,免 Pillow)

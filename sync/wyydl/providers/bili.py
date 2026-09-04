@@ -57,16 +57,22 @@ class BiliProvider(BaseProvider):
             return False
 
     def login_qr_start(self) -> dict:
-        """生成 B 站登录二维码(本地渲染,返回 dataURL)。"""
+        """生成 B 站登录二维码(本地渲染,返回 dataURL)。
+        优先用 qrcode 自带的纯 Python PNG 工厂(容器无需 Pillow),失败回退 PIL。"""
         import qrcode
         d = (self.client.get(f"{PASSPORT}/x/passport-login/web/qrcode/generate").json()
              .get("data") or {})
         url = d.get("url") or ""
+        if not url:
+            raise RuntimeError("B 站未返回登录二维码 URL")
         qr = qrcode.QRCode(border=1)
         qr.add_data(url)
-        buf = io.BytesIO()
         qr.make(fit=True)
-        qr.make_image().save(buf, format="PNG")
+        buf = io.BytesIO()
+        try:
+            qr.make_image(image_factory=qrcode.image.pure.PyPNGImage).save(buf)
+        except Exception:
+            qr.make_image().save(buf, format="PNG")
         img = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
         return {"key": d.get("qrcode_key") or "", "img": img, "url": url}
 
