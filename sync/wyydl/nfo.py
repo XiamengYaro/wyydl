@@ -10,7 +10,7 @@ _HEAD = '<?xml version="1.0" encoding="utf-8" standalone="yes"?>'
 def write_song_nfo(path: Path, *, title: str, artist: str, album: str = "",
                    albumartist: str = "", track: int = 0, disc: int = 0,
                    year: str = "", duration: int = 0, genre: str = "",
-                   ncm_id: str = "", platform: str = "netease") -> None:
+                   ncm_id: str = "") -> None:
     lines = [_HEAD, "<song>"]
 
     def tag(key: str, val: object) -> None:
@@ -27,7 +27,7 @@ def write_song_nfo(path: Path, *, title: str, artist: str, album: str = "",
     tag("genre", genre)
     tag("duration", int(duration or 0))  # 秒
     if ncm_id:
-        lines.append(f'  <uniqueid type="{escape(platform)}">{escape(str(ncm_id))}</uniqueid>')
+        lines.append(f'  <uniqueid type="netease">{escape(str(ncm_id))}</uniqueid>')
     lines.append("</song>")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -58,13 +58,12 @@ def write_album_nfo(path: Path, *, title: str, artist: str, year: str = "",
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_artist_nfo(path: Path, *, name: str, genre: str = "", ncm_id: str = "",
-                     platform: str = "netease") -> None:
+def write_artist_nfo(path: Path, *, name: str, genre: str = "", ncm_id: str = "") -> None:
     lines = [_HEAD, "<artist>"]
     lines.append(f"  <name>{escape(name)}</name>")
     if genre:
         lines.append(f"  <genre>{escape(genre)}</genre>")
     if ncm_id:
-        lines.append(f'  <uniqueid type="{escape(platform)}">{escape(str(ncm_id))}</uniqueid>')
+        lines.append(f'  <uniqueid type="netease">{escape(ncm_id)}</uniqueid>')
     lines.append("</artist>")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

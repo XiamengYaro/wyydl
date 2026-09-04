@@ -150,19 +150,6 @@ ok("下载进度回调", eng.active[1]["downloaded"] == 50 and eng.active[1]["to
 eng.active.pop(1)
 ok("活动列表清理", not eng.active)
 
-# ---- compose 文件健全性(防重复键回归) ----
-import yaml as _yaml  # noqa: E402
-
-for _cf in ["../fpk/app/docker/docker-compose.yaml",
-            "../fpk/app/docker/docker-compose.yaml.tpl",
-            "../docker-compose.yml"]:
-    _d = _yaml.safe_load(open(_cf, encoding="utf-8"))
-    _bad = [(svc, list((conf or {}).keys())) for svc, conf in (_d.get("services") or {}).items()
-            if len(list((conf or {}).keys())) != len(set((conf or {}).keys()))]
-    ok(f"compose 无重复键: {_cf.split('/')[-1]}", not _bad)
-ok("compose 含三服务", set((_yaml.safe_load(open("../fpk/app/docker/docker-compose.yaml")) or {})
-   .get("services", {}).keys()) == {"ncm-api", "wyydl-sync"})
-
 # ---- 通知事件 ----
 from wyydl import notify as _notify  # noqa: E402
 

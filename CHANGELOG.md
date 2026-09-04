@@ -14,53 +14,12 @@
 - 版本号**三处同步**:`fpk/manifest`、`sync/wyydl/__init__.py`、本文件;推送 `v<版本>` 标签自动构建发布(CI 校验标签与 manifest 一致、并校验标签为合法语义化版本)。
 - 纯文档/仓库内改动不涉及发布产物时,不强制递增版本号。
 
-## 1.13.0 - 2026-09-04
+## 2.0.0 - 2026-09-04
 
-### QQ 音乐与哔哩哔哩改为直连实现
-- **QQ 音乐**:不再需要 QQMusicApi 容器——Provider 直连腾讯接口:扫码登录(ptqrshow/ptqrlogin + hash33 token)、歌单与曲目、GetVkey 取流(音质前缀 AI00 母带→Q001→F000 FLAC→O801→M800/M500 全试取第一个可用)、搜索、歌词(musicu.fcg)。
-- **哔哩哔哩**:不再需要 yt-dlp——直连 view/playurl:收藏夹(分页)、BV/av 链接(含多 P)、取流选 Hi-Res FLAC → Dolby → 最高码率 DASH 音频 → DURL。
-- Compose 与 fpk 均移除 QQMusicApi 容器与 yt-dlp 依赖,镜像更精简。
-- 依赖新增 `pypng`(B 站扫码二维码纯 Python 生成);移除 `yt-dlp`。
-
-### 修复
-- B 站扫码「确认后不生效」:code=0 被 falsy 兜底吞掉的解析错误。
-- web.py 移除歌单存在重复路由导致特殊源删除失效的问题。
-
-## 1.12.6 - 2026-09-04
-
-- **修复 B 站扫码确认后不生效**:轮询接口的「确认成功」状态码为 `0`,被 `code or -1` 的 falsy 兜底吞掉,导致已确认却仍显示等待直至二维码过期。已修复解析并持久化 Cookie;前端对 B 站过期码(86038)也会停止轮询提示重新获取。
-
-## 1.12.5 - 2026-09-04
-
-- 修复 B 站扫码登录「获取失败:500」:二维码图片生成改用 qrcode 自带的**纯 Python PNG 工厂**(容器无需 Pillow),失败回退 PIL。
-
-## 1.12.4 - 2026-09-04
-
-- 平台登录(扫码/Cookie)失败不再返回裸 500:统一转为可读错误,如「无法连接 QQ 音乐 API 容器(qq-music-api),请按 fpk/README 启用后再试」。
-
-## 1.12.3 - 2026-09-04
-
-- **修复升级解析失败**:fpk compose 中 `wyydl-sync` 服务存在重复的 `build`/`container_name`/`restart` 键(历次补丁叠加所致),fnOS 解析报 `mapping key "build" already defined`。已重写为干净版本,并新增冒烟测试守卫防止回归。
-
-## 1.12.2 - 2026-09-03
-
-- 修复 B 站扫码登录报 **412 Precondition Failed**:B 站 passport 接口有 UA 反爬,BiliProvider 的 HTTP 客户端与 yt-dlp 请求统一携带浏览器 UA + Referer。
-- GitHub 升级检查缓存放宽到 6 小时(未认证 API 每小时限频,避免面板轮询打满 403)。
-
-## 1.12.1 - 2026-08-29
-
-- **修复 fpk 升级失败**:fpk 的 compose 不再包含 `qq-music-api` 的 GitHub 现场构建(部分 NAS 拉取 GitHub 失败导致整个 wyydl 无法升级)。QQ 功能变为**可选**——需要时按 fpk/README 的一条命令启用(CI 已把镜像发布到 GHCR,支持镜像源前缀拉取)。
-- 通用 docker-compose.yml 支持通过 `.env` 变量(`WYYDL_SYNC_IMAGE` / `WYYDL_QQ_IMAGE`)改用镜像源前缀。
-
-## 1.12.0 - 2026-08-29
-
-### 多平台打通:哔哩哔哩 + QQ 音乐
-
-- **平台 Provider 架构**:`providers/` 抽象层,网易云/QQ/B 站三个 Provider 统一输出中性数据;sid 分段(网易原样、QQ = 1e12+ID、B 站 = 2e12+ID),`songs` 表新增 `platform` 列(自动迁移)。
-- **哔哩哔哩**:passport 二维码扫码登录;收藏夹/合集/UP 主/BV 链接经 yt-dlp 列举与下载(bestaudio);元数据 标题/UP 主/封面/时长;流派厂牌天然缺失留空。
-- **QQ 音乐**:QQMusicApi 容器(jsososo,CI 同步发布镜像);歌单/曲目/vkey 取流/歌词/搜索;登录扫码优先、Cookie 粘贴兜底。
-- **面板**:登录区三平台(QQ/B 站支持扫码 + Cookie 双入口);添加目标支持 B 站链接/BV 号与 QQ 歌单;聚合搜索带平台徽标;歌单行平台徽标。
-- 修复:移除歌单重复路由导致特殊源删除失效的问题。
+**回滚版本**:应用内容与 v1.11.1 一致(移除 QQ 音乐/哔哩哔哩多平台及 1.12.x 系列变更),按 SemVer 属破坏性变更故主版本 +1。
+- 保留:v1.11.1 全部功能(网易音质协商/全量标签/NFO/四种布局/特殊源/通知事件/本地刮削/账号歌单导入)。
+- 顺带修复:移除歌单的重复路由(特殊源删除失效)。
+- v1.12.x / v1.13.0 的 Release 仍保留在 GitHub,可随时下载回切。
 
 ## 1.11.1 - 2026-08-29
 

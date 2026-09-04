@@ -75,10 +75,8 @@ def _tag_flac(path: Path, meta: dict, cover: bytes | None, lrc: str | None) -> N
         f["GENRE"] = str(meta["genre"])
     if meta.get("label"):
         f["PUBLISHER"] = str(meta["label"])
-    platform = str(meta.get("platform") or "netease")
-    f["SOURCE_ID"] = f"{platform}:{meta.get('sid')}"
-    if platform == "netease":
-        f["NETEASE_ID"] = str(meta.get("sid"))
+    if meta.get("sid"):
+        f["NETEASE_ID"] = str(meta["sid"])
     if track := int(meta.get("track") or 0):
         f["tracknumber"] = str(track)
     if disc := int(meta.get("disc") or 0):
@@ -113,10 +111,8 @@ def _tag_mp3(path: Path, meta: dict, cover: bytes | None, lrc: str | None) -> No
         tags.add(TCON(encoding=3, text=str(meta["genre"])))
     if meta.get("label"):
         tags.add(TPUB(encoding=3, text=str(meta["label"])))
-    platform = str(meta.get("platform") or "netease")
-    tags.add(TXXX(encoding=3, desc="SOURCE_SONG_ID", text=f"{platform}:{meta.get('sid')}"))
-    if platform == "netease":
-        tags.add(TXXX(encoding=3, desc="NETEASE_SONG_ID", text=str(meta.get("sid"))))
+    if meta.get("sid"):
+        tags.add(TXXX(encoding=3, desc="NETEASE_SONG_ID", text=str(meta["sid"])))
     if track := int(meta.get("track") or 0):
         tags.add(TRCK(encoding=3, text=str(track)))
     if disc := int(meta.get("disc") or 0):
@@ -138,10 +134,8 @@ def _tag_mp4(path: Path, meta: dict, cover: bytes | None, lrc: str | None) -> No
     m["\xa9alb"] = [meta.get("album") or ""]
     if meta.get("genre"):
         m["\xa9gen"] = [str(meta["genre"])]
-    platform = str(meta.get("platform") or "netease")
-    m["----:com.apple.iTunes:SOURCE_ID"] = [MP4FreeForm(f"{platform}:{meta.get('sid')}".encode("utf-8"))]
-    if platform == "netease":
-        m["----:com.apple.iTunes:NETEASE_ID"] = [MP4FreeForm(str(meta.get("sid")).encode("utf-8"))]
+    if meta.get("sid"):
+        m["----:com.apple.iTunes:NETEASE_ID"] = [MP4FreeForm(str(meta["sid"]).encode("utf-8"))]
     if track := int(meta.get("track") or 0):
         m["trkn"] = [(track, 0)]
     if meta.get("date"):

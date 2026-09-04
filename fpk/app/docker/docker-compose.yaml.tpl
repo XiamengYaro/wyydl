@@ -28,7 +28,6 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - NCM_API=http://ncm-api:3000
-      - QQ_API=http://qq-music-api:3300
     ports:
       - "${wyydl_port:-8286}:8286"
     volumes:
