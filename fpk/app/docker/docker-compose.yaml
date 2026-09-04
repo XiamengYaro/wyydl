@@ -24,9 +24,6 @@ services:
     build: ./sync
     container_name: wyydl-sync
     restart: unless-stopped
-    build: ./sync
-    container_name: wyydl-sync
-    restart: unless-stopped
     depends_on: [ncm-api]
     environment:
       - TZ=Asia/Shanghai
