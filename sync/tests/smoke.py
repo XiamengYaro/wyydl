@@ -286,6 +286,9 @@ _sumL = {"status": "ok", "playlists": [], "levels": {}, "added": 0, "upgraded": 
 _engL._run(_sumL, None)
 ok("遗留 B 站条目自动跳过且不崩溃", len(_sumL["playlists"]) == 1
    and _sumL["playlists"][0]["platform"] == "netease")
+ok("遗留条目已从配置自动清理", all(
+    "bilibili" not in str(e.get("platform") or "") and "space.bilibili" not in str(e.get("id") or "")
+    for e in _cfgL.d["playlists"]))
 
 # ---- 语义化版本比较 ----
 from wyydl.web import _ver_tuple as _vt  # noqa: E402

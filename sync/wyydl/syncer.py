@@ -107,8 +107,13 @@ class SyncEngine:
                 return int(e.get("id"))
             except (TypeError, ValueError):
                 return None
-        for bad in [e for e in targets if _num_id(e) is None and e.get("source") not in SOURCE_PID]:
-            log.warning("跳过无法识别的来源配置(请在面板删除该条目):%s", str(bad.get("id"))[:80])
+        legacy = [e for e in targets if _num_id(e) is None and e.get("source") not in SOURCE_PID]
+        if legacy:
+            for e in legacy:
+                log.warning("自动移除无法识别的旧来源条目(1.12.x 遗留):%s", str(e.get("id"))[:80])
+            cfg.d["playlists"] = [e for e in targets if _num_id(e) is not None
+                                  or e.get("source") in SOURCE_PID]
+            cfg.save()
         targets = [e for e in targets if _num_id(e) is not None or e.get("source") in SOURCE_PID]
         if playlist_ids:
             want = {int(x) for x in playlist_ids}
@@ -261,7 +266,12 @@ class SyncEngine:
         """sid -> (歌单名, 位置),按配置里的歌单顺序取第一个所属歌单。"""
         out: dict[int, tuple[str, int]] = {}
         pls = {p["pid"]: p["name"] for p in self.state.playlists()}
-        order = [int(p.get("id")) for p in (self.cfg.d.get("playlists") or [])]
+        order = []
+        for p in (self.cfg.d.get("playlists") or []):
+            try:
+                order.append(int(p.get("id")))
+            except (TypeError, ValueError):
+                continue  # 跳过 1.12.x 遗留的非数字条目
         for pid in order:
             name = pls.get(pid) or str(pid)
             for sid, pos in self.state.playlist_songs(pid):
