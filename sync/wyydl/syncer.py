@@ -101,6 +101,15 @@ class SyncEngine:
             raise LoginExpired("MUSIC_U 无效或已过期")
 
         targets = list(cfg.d.get("playlists") or [])
+        # 跳过无法识别的旧条目(如 1.12.x 遗留的 B 站链接),避免 int() 崩溃中断整轮同步
+        def _num_id(e: dict):
+            try:
+                return int(e.get("id"))
+            except (TypeError, ValueError):
+                return None
+        for bad in [e for e in targets if _num_id(e) is None and e.get("source") not in SOURCE_PID]:
+            log.warning("跳过无法识别的来源配置(请在面板删除该条目):%s", str(bad.get("id"))[:80])
+        targets = [e for e in targets if _num_id(e) is not None or e.get("source") in SOURCE_PID]
         if playlist_ids:
             want = {int(x) for x in playlist_ids}
             if any(w < 0 for w in want):  # 负数 = 特殊源
@@ -116,6 +125,7 @@ class SyncEngine:
         desired: dict[int, list[dict]] = {}
         prev_members: dict[int, set[int]] = {}
         for p in targets:
+            platform = "netease"
             source = str(p.get("source") or "playlist")
             if source in SOURCE_PID:
                 pid = SOURCE_PID[source]
@@ -128,7 +138,7 @@ class SyncEngine:
                     ids = []
                 tracks = [{"id": i} for i in ids]
             else:
-                pid = int(p["id"])
+                pid = _num_id(p)
                 self._set_progress("拉取歌单", str(p.get("name") or pid))
                 pl = self.api.playlist_detail(pid)
                 name = str(p.get("name") or pl.get("name") or pid)
@@ -137,7 +147,8 @@ class SyncEngine:
             desired[pid] = tracks
             self.state.upsert_playlist(pid, name, len(tracks), last_sync=now_str())
             self.state.set_playlist_songs(pid, [(int(t["id"]), i) for i, t in enumerate(tracks) if t.get("id")])
-            summary["playlists"].append({"id": pid, "name": name, "total": len(tracks)})
+            summary["playlists"].append({"id": pid, "name": name, "total": len(tracks),
+                                         "platform": platform})
             log.info("歌单[%s] 共 %d 首", name, len(tracks))
 
         # 2) 详情与音质权限

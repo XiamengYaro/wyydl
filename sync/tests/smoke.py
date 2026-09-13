@@ -265,6 +265,28 @@ ok("MP3 标题/歌手/音轨", _tags["TIT2"].text[0] == "全量曲" and _tags["T
 ok("MP3 封面内嵌", bool(_tags.getall("APIC")) and _tags.getall("APIC")[0].data == b"\xff\xd8\xff\xe0FAKEJPEG")
 ok("MP3 歌词内嵌", bool(_tags.getall("USLT")))
 
+# ---- 1.12.x 遗留条目兼容(B 站链接自动跳过,不崩溃) ----
+_cfgL = config.Config.load()
+_cfgL.d["playlists"] = [
+    {"id": 24381616},
+    {"id": "https://space.bilibili.com/434197967/favlist?fid=2225770667", "platform": "bilibili"},
+]
+_engL = SyncEngine(_cfgL, st, _mock_api([
+    {"data": {"code": 200}},
+    {"playlist": {"name": "测试歌单", "trackIds": [{"id": 1}]}},
+    {"songs": [{"id": 1, "name": "歌1", "ar": [{"name": "A"}],
+                "al": {"name": "Al", "id": 0, "picUrl": ""}, "dt": 1000, "no": 1,
+                "privilege": {"maxBrLevel": "standard", "dlLevel": "standard"}}],
+     "privileges": [{"id": 1, "maxBrLevel": "standard", "dlLevel": "standard"}]},
+    {"data": [{"id": 1, "url": "http://mock/1.mp3", "type": "mp3", "size": 3,
+               "md5": "", "level": "standard"}]},
+]))
+_sumL = {"status": "ok", "playlists": [], "levels": {}, "added": 0, "upgraded": 0,
+         "failed": 0, "removed": 0, "partial": 0, "partial_failures": [], "failures": []}
+_engL._run(_sumL, None)
+ok("遗留 B 站条目自动跳过且不崩溃", len(_sumL["playlists"]) == 1
+   and _sumL["playlists"][0]["platform"] == "netease")
+
 # ---- 语义化版本比较 ----
 from wyydl.web import _ver_tuple as _vt  # noqa: E402
 

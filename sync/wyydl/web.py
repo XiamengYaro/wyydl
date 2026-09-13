@@ -177,6 +177,12 @@ def create_app(ctx: AppContext) -> FastAPI:
 
     @app.delete("/api/playlists/{pid}", dependencies=[Depends(guard)])
     def remove_playlist(pid: int) -> dict:
+        def _match(e: dict) -> bool:
+            v = e.get("id")
+            try:
+                return int(v) == pid
+            except (TypeError, ValueError):
+                return str(v) == str(pid)  # 兼容非数字 ID 的旧条目
         pls = ctx.cfg.d.get("playlists") or []
         if pid < 0:  # 特殊源
             src = next((k for k, v in SOURCE_PID.items() if v == pid), None)
@@ -186,9 +192,9 @@ def create_app(ctx: AppContext) -> FastAPI:
             ctx.cfg.save()
             ctx.state.remove_playlist(pid)
             return {"removed": pid}
-        if not any(int(p.get("id", -1)) == pid for p in pls):
+        if not any(_match(e) for e in pls):
             raise HTTPException(status_code=404, detail="歌单不存在")
-        ctx.cfg.d["playlists"] = [p for p in pls if int(p.get("id", -1)) != pid]
+        ctx.cfg.d["playlists"] = [e for e in pls if not _match(e)]
         ctx.cfg.save()
         ctx.state.remove_playlist(pid)  # 本地文件保留,仅解除关联
         return {"removed": pid}
