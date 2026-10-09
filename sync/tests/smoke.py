@@ -11,6 +11,7 @@ os.environ["WYYDL_DB_DIR"] = str(_tmp / "db")
 os.environ["WYYDL_LOG_DIR"] = str(_tmp / "logs")
 os.environ["WYYDL_MUSIC_DIR"] = str(_tmp / "music")
 
+import json  # noqa: E402
 import sys  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -149,6 +150,35 @@ eng._dl_tick(1, 50, 200)
 ok("下载进度回调", eng.active[1]["downloaded"] == 50 and eng.active[1]["total"] == 200)
 eng.active.pop(1)
 ok("活动列表清理", not eng.active)
+
+# ---- fpk 包完整性(compose 镜像占位/无重复键/向导字段) ----
+import subprocess as _sp  # noqa: E402
+import yaml as _yaml  # noqa: E402
+
+for _cf in ["../fpk/app/docker/docker-compose.yaml", "../fpk/app/docker/docker-compose.yaml.tpl"]:
+    _txt = open(_cf, encoding="utf-8").read()
+    _d = _yaml.safe_load(_txt)
+    _svc = (_d.get("services") or {})
+    ok(f"compose 服务完整: {_cf.split('/')[-1]}", set(_svc.keys()) == {"ncm-api", "wyydl-sync"})
+    ok(f"wyydl-sync 走镜像模式: {_cf.split('/')[-1]}",
+       "image" in _svc["wyydl-sync"] and "build" not in _svc["wyydl-sync"])
+    ok(f"ncm-api 镜像未被误改: {_cf.split('/')[-1]}",
+       _svc["ncm-api"]["image"] == "moefurina/ncm-api:latest")
+    _img = _svc["wyydl-sync"]["image"]
+    ok(f"镜像为 wyydl-sync 或占位符: {_cf.split('/')[-1]}",
+       "wyydl-sync" in _img or _img.strip() == "__WYYDL_IMAGE__")
+
+_wi = json.load(open("../fpk/wizard/install", encoding="utf-8"))
+_fields = [i.get("field") for i in _wi[0]["items"]]
+ok("安装向导含镜像源选项", "wyydl_image" in _fields)
+ok("安装向导含端口与目录", "wyydl_port" in _fields and "wyydl_music_dir" in _fields)
+
+_sh = open("../fpk/cmd/common.sh", encoding="utf-8").read()
+ok("common.sh 提取镜像仅匹配 wyydl-sync 行", "wyydl-sync" in _sh and "ghcr.nju.edu.cn" in _sh)
+ok("common.sh 无语法错误", _sp.run(["sh", "-n", "../fpk/cmd/common.sh"]).returncode == 0)
+
+_dkf = open("../sync/Dockerfile", encoding="utf-8").read()
+ok("Dockerfile 基础镜像可覆盖", "ARG BASE_IMAGE" in _dkf and "FROM ${BASE_IMAGE}" in _dkf)
 
 # ---- 通知事件 ----
 from wyydl import notify as _notify  # noqa: E402

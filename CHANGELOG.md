@@ -14,6 +14,14 @@
 - 版本号**三处同步**:`fpk/manifest`、`sync/wyydl/__init__.py`、本文件;推送 `v<版本>` 标签自动构建发布(CI 校验标签与 manifest 一致、并校验标签为合法语义化版本)。
 - 纯文档/仓库内改动不涉及发布产物时,不强制递增版本号。
 
+## 2.1.1 - 2026-10-09
+
+- **修复全新安装失败**(报 `failed to solve: python:3.12-slim ... 401 Unauthorized`):
+  - fpk 的 compose 改为**直接使用 GHCR 预构建镜像**,安装时零构建,不再依赖 Docker Hub 的 python 基础镜像;
+  - 安装/配置向导新增「容器镜像源」:官方 `ghcr.io`(默认)或国内镜像源 `ghcr.nju.edu.cn`;
+  - 本地构建路径保留:`Dockerfile` 的基础镜像(`BASE_IMAGE`)与 pip 源(`PIP_INDEX_URL`)均可通过构建参数覆盖(如 `docker.m.daocloud.io/library/python:3.12-slim` + 清华 pypi);
+  - 新增 13 项包完整性回归测试(compose 结构、镜像行精确匹配、向导字段、Dockerfile 可覆盖性),防止镜像行被误改。
+
 ## 2.1.0 - 2026-09-13
 
 - **Web 面板改版为 Apple 风格液态玻璃**:

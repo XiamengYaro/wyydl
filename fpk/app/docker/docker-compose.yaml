@@ -20,8 +20,14 @@ services:
       - "3000"
     networks: [wyydl]
 
+  # 默认使用 GHCR 预构建镜像,安装时无需本地构建(避开 python 基础镜像拉取问题)。
+  # 若你的网络访问 ghcr.io 不通,可在安装向导"容器镜像源"里换成国内镜像源,例如:
+  #   ghcr.nju.edu.cn/xiamengyaro/wyydl/wyydl-sync:vX.Y.Z
+  # 想改为全新本地构建(不依赖 ghcr):注释 image 行,取消 build 行注释,再执行
+  #   docker compose build --build-arg BASE_IMAGE=docker.m.daocloud.io/library/python:3.12-slim
   wyydl-sync:
-    build: ./sync
+    image: ghcr.io/xiamengyaro/wyydl/wyydl-sync:v2.1.1
+    # build: ./sync
     container_name: wyydl-sync
     restart: unless-stopped
     depends_on: [ncm-api]
