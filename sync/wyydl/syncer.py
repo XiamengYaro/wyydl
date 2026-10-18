@@ -500,18 +500,40 @@ class SyncEngine:
                 return entry, ""
             notes.append(f"{lvl} 仅试听" if entry.get("url") else f"{lvl} 无链接")
 
-        try:
-            entry = self.api.song_url_legacy(sid)
-            if has_full_stream(entry):
-                log.info("歌曲 %s 新版接口未返回完整音源,兼容接口取流成功", sid)
-                entry["level"] = str(entry.get("level") or want_level)
-                return entry, ""
-            notes.append("兼容接口仅试听" if entry.get("url") else "兼容接口无链接")
-        except ApiError as e:
-            notes.append("兼容接口异常")
-            log.debug("歌曲 %s 兼容取流失败:%s", sid, e)
+        for br in (999000, 128000):
+            try:
+                entry = self.api.song_url_legacy(sid, br)
+                if has_full_stream(entry):
+                    log.info("歌曲 %s 新版接口未返回完整音源,兼容接口(%s bps)取流成功", sid, br)
+                    entry["level"] = str(entry.get("level") or want_level)
+                    return entry, ""
+                label = "兼容接口仅试听" if entry.get("url") else "兼容接口无链接"
+                notes.append(f"{label}({br // 1000}k)")
+            except ApiError as e:
+                notes.append(f"兼容接口异常({br // 1000}k)")
+                log.debug("歌曲 %s 兼容取流 %s 失败:%s", sid, br, e)
 
-        compact = "、".join(dict.fromkeys(notes[:4]))
+        try:
+            entry = self.api.song_download_url(sid, "standard")
+            if has_full_stream(entry):
+                log.info("歌曲 %s 播放接口无完整音源,下载接口取流成功", sid)
+                return entry, ""
+            notes.append("下载接口仅试听" if entry.get("url") else "下载接口无链接")
+        except ApiError as e:
+            notes.append("下载接口异常")
+            log.debug("歌曲 %s 下载取流失败:%s", sid, e)
+
+        try:
+            entry = self.api.song_url_match(sid)
+            if has_full_stream(entry):
+                log.info("歌曲 %s 原生音源不可用,显式解灰接口取流成功", sid)
+                return entry, ""
+            notes.append("解灰接口无链接")
+        except ApiError as e:
+            notes.append("解灰接口异常")
+            log.debug("歌曲 %s 解灰取流失败:%s", sid, e)
+
+        compact = "、".join(dict.fromkeys(notes[:6]))
         return None, compact
 
     def _write_nfo(self, final: Path, meta: dict, detail: dict) -> None:

@@ -62,9 +62,11 @@ class NcmApi:
                 return data
             except Exception as e:
                 last_err = e
-                log.debug("GET %s attempt %s failed: %s", path, attempt + 1, e)
+                detail = e.response.status_code if isinstance(e, httpx.HTTPStatusError) else e.__class__.__name__
+                log.debug("GET %s attempt %s failed: %s", path, attempt + 1, detail)
                 time.sleep(2.0 * (attempt + 1))
-        raise ApiError(f"{path}: {last_err}")
+        detail = last_err.response.status_code if isinstance(last_err, httpx.HTTPStatusError) else last_err.__class__.__name__
+        raise ApiError(f"{path}: {detail}")
 
     # ---- 登录 ----
     def login_status(self) -> dict:
@@ -230,6 +232,41 @@ class NcmApi:
             if e and e.get("id") is not None and int(e["id"]) == sid:
                 return e
         return {}
+
+    def song_download_url(self, sid: int, level: str = "standard") -> dict:
+        """客户端下载接口。部分账号可下载但播放接口只返回试听。"""
+        d = self.get("/song/download/url/v1", id=sid, level=level)
+        if d.get("code") != 200:
+            raise ApiError(f"song/download/url/v1 code={d.get('code')}")
+        data = d.get("data")
+        if isinstance(data, list):
+            entry = next((x for x in data if isinstance(x, dict)), {})
+        else:
+            entry = dict(data) if isinstance(data, dict) else {}
+        if entry:
+            entry.setdefault("id", sid)
+            entry.setdefault("level", level)
+        return entry
+
+    def song_url_match(self, sid: int) -> dict:
+        """显式解灰接口,用作原生取流全部失败后的最后兜底。"""
+        d = self.get("/song/url/match", id=sid)
+        if d.get("code") != 200:
+            raise ApiError(f"song/url/match code={d.get('code')}")
+        data = d.get("data")
+        if isinstance(data, dict):
+            entry = dict(data)
+        else:
+            url = str(data or "").strip()
+            entry = {"id": sid, "url": str(d.get("proxyUrl") or url).strip()}
+        if entry.get("url"):
+            entry.setdefault("id", sid)
+            entry.setdefault("level", "standard")
+            raw_url = str(data.get("url") or data or "") if isinstance(data, dict) else str(data or "")
+            suffix = raw_url.split("?", 1)[0].rsplit(".", 1)[-1].lower()
+            entry.setdefault("type", suffix if suffix in ("mp3", "flac", "m4a") else "mp3")
+            entry.setdefault("freeTrialInfo", None)
+        return entry
 
     def lyric(self, sid: int) -> str | None:
         """歌词文本;None 表示获取失败(接口异常),空串表示无歌词。"""

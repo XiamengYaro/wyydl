@@ -12,6 +12,7 @@ os.environ["WYYDL_LOG_DIR"] = str(_tmp / "logs")
 os.environ["WYYDL_MUSIC_DIR"] = str(_tmp / "music")
 
 import json  # noqa: E402
+import logging  # noqa: E402
 import sys  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -43,6 +44,8 @@ ok("未知档位不设限", quality.pick_level({"maxBrLevel": "未来档位"}, C
 ok("降档链", quality.chain_from("lossless", CHAIN) == ["lossless", "exhigh", "standard"])
 ok("降档链(sky 以下)", quality.chain_from("sky", CHAIN) == ["hires", "lossless", "exhigh", "standard"])
 ok("降档链(未知档=全链)", quality.chain_from("未知档", CHAIN) == CHAIN)
+ok("配置漏选 standard 时仍强制兜底",
+   quality.chain_from("hires", ["jymaster", "hires", "lossless", "exhigh"])[-1] == "standard")
 
 # ---- 命名清洗 ----
 ok("非法字符", sanitize('A/B:*c?"<>|') == "A B c")
@@ -81,6 +84,12 @@ ok("运行记录", st.last_run()["summary"]["added"] == 1)
 # ---- cookie 解析 ----
 ok("MUSIC_U 提取", _extract_music_u("MUSIC_U=xyz; os=pc; __csrf=x") == "xyz")
 ok("MUSIC_U 缺失", _extract_music_u("os=pc") is None)
+from wyydl.main import setup_logging  # noqa: E402
+
+setup_logging()
+ok("httpx 请求日志不记录完整 cookie URL",
+   logging.getLogger("httpx").level == logging.WARNING
+   and logging.getLogger("httpcore").level == logging.WARNING)
 
 # ---- 扫码状态解析(check 接口状态码在顶层,与 key/create 的嵌套结构不同)----
 import httpx as _hx  # noqa: E402
@@ -121,6 +130,11 @@ ok("详情合并音质权限", a.song_detail([1])[0]["privilege"]["maxBrLevel"] 
 a = _mock_api([{"code": 200, "data": [
     {"id": 1, "url": "https://cdn.example/1.mp3", "level": "standard", "type": "mp3"}]}])
 ok("旧版取流兼容接口", a.song_url_legacy(1)["url"].startswith("https://"))
+a = _mock_api([{"code": 200, "data": {
+    "url": "https://cdn.example/d.flac", "type": "flac", "freeTrialInfo": None}}])
+ok("客户端下载取流接口", a.song_download_url(2)["url"].endswith(".flac"))
+a = _mock_api([{"code": 200, "data": "https://cdn.example/m.mp3", "proxyUrl": ""}])
+ok("显式解灰取流接口", a.song_url_match(3)["url"].endswith(".mp3"))
 a = _mock_api([{"profile": {"userId": 9}},
                {"playlist": [{"id": 1}, {"id": 2}], "more": True},
                {"playlist": [{"id": 3}], "more": False}])
@@ -172,6 +186,32 @@ _engStream = SyncEngine(cfg, st, _mock_api([
 ]))
 _stream, _note = _engStream._resolve_stream(1, "jymaster")
 ok("v1 无完整音源时回退旧接口", bool(_stream) and _stream["url"].endswith("full.mp3") and not _note)
+_engStreamLower = SyncEngine(cfg, st, _mock_api([
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": "https://cdn/trial.mp3",
+                            "freeTrialInfo": {"start": 0, "end": 30}}]},
+    {"code": 200, "data": [{"id": 1, "url": "https://cdn/128.mp3",
+                            "level": "standard", "type": "mp3"}]},
+]))
+_stream2, _note2 = _engStreamLower._resolve_stream(1, "jymaster")
+ok("兼容接口低码率仍可兜底", bool(_stream2) and _stream2["url"].endswith("128.mp3"))
+_engMatch = SyncEngine(cfg, st, _mock_api([
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": {"url": None}},
+    {"code": 200, "data": "https://cdn/matched.mp3", "proxyUrl": ""},
+]))
+_stream3, _note3 = _engMatch._resolve_stream(1, "jymaster")
+ok("原生接口失败后显式解灰兜底", bool(_stream3) and _stream3["url"].endswith("matched.mp3"))
 
 # ---- fpk 包完整性(compose 镜像占位/无重复键/向导字段) ----
 import subprocess as _sp  # noqa: E402

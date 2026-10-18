@@ -22,6 +22,10 @@ log = logging.getLogger("wyydl.main")
 def setup_logging() -> None:
     root = logging.getLogger()
     root.setLevel(logging.INFO)
+    # httpx 会把完整请求 URL 写入 INFO 日志;网易云 cookie 当前作为查询参数传入,
+    # 必须压到 WARNING,否则 MUSIC_U 会明文落盘并显示在 Web 日志中。
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     fh = RotatingFileHandler(LOG_DIR / "wyydl.log", maxBytes=5 * 1024 * 1024,
                              backupCount=3, encoding="utf-8")

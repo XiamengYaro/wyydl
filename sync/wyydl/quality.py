@@ -34,7 +34,10 @@ def pick_level(privilege: dict | None, chain: list[str]) -> str:
 
 
 def chain_from(level: str, chain: list[str]) -> list[str]:
-    """返回 level 及其以下的降档序列。"""
+    """返回 level 及其以下的降档序列,并始终保留 standard 作为最终兜底。"""
     r = rank(level)
     out = [x for x in chain if rank(x) >= 0 and rank(x) <= (r if r >= 0 else 10**9)]
-    return out or [level]
+    out = list(dict.fromkeys(out))
+    if "standard" not in out:
+        out.append("standard")
+    return out
