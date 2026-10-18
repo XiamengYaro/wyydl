@@ -59,14 +59,23 @@ cd fpk && ./build.sh
 # 产物:wyydl.fpk
 ```
 
-`build.sh` 会先把 `../sync` 源码复制进 `app/docker/sync/`(排除缓存与本地数据),再调用 `fnpack build`。
+`build.sh` 会先把 `../sync` 源码复制进 `app/docker/sync/`(排除缓存与本地数据),再调用 `fnpack build`。默认镜像版依赖同版本 GHCR 镜像已发布。
+
+如需生成**不依赖 GHCR、安装时从包内源码本地构建**的版本:
+
+```bash
+WYYDL_BUILD_MODE=local ./build.sh
+# 产物:wyydl-<版本>-local.fpk
+```
+
+本地构建版默认通过国内可访问的基础镜像与 PyPI 源构建，也可在安装环境中通过 `WYYDL_BASE_IMAGE`、`WYYDL_PIP_INDEX_URL` 覆盖。
 
 ## 安装到 fnOS
 
 1. 把 `wyydl.fpk` 上传到 fnOS 设备;
 2. 通过应用中心的**手动/本地安装入口**安装,或使用 [appcenter-cli](https://developer.fnnas.com/docs/cli/appcentercli/)(需管理员权限);
 3. 安装前确保应用中心已安装 **Docker** 应用(`install_init` 会检查);
-4. 安装后启动应用——appcenter 自动执行 `docker compose up`,**首次启动会构建镜像**,需设备可访问 pypi,耗时几分钟属正常。
+4. 安装后启动应用。镜像版直接拉取同版本 GHCR 镜像；本地构建版会在安装阶段构建镜像，耗时几分钟属正常。
 
 ## 安装后的东西在哪
 

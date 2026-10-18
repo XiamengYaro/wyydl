@@ -9,7 +9,13 @@ mkdir -p "${TRIM_PKGVAR}/config" "${TRIM_PKGVAR}/db" "${TRIM_PKGVAR}/logs"
 
 wyydl_apply_settings || exit 1
 
-if ! docker compose -f "${TRIM_APPDEST}/docker/docker-compose.yaml" build >/dev/null 2>&1; then
-    echo "提示:镜像预构建未完成,首次启动时将自动构建(需可访问 pypi)"
+compose="${TRIM_APPDEST}/docker/docker-compose.yaml"
+if grep -Eq '^[[:space:]]+build:' "$compose"; then
+    if ! docker compose -f "$compose" build; then
+        [ -n "$TRIM_TEMP_LOGFILE" ] && echo "本地镜像构建失败:请确认 Docker 可访问基础镜像源和 PyPI" > "$TRIM_TEMP_LOGFILE"
+        exit 1
+    fi
+else
+    echo "使用预构建镜像,跳过本地构建"
 fi
 exit 0

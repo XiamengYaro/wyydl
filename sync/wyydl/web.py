@@ -123,6 +123,15 @@ def create_app(ctx: AppContext) -> FastAPI:
             raise HTTPException(status_code=409, detail="已有同步任务在运行")
         return {"started": True}
 
+    @app.post("/api/retry-failed", dependencies=[Depends(guard)])
+    def retry_failed() -> dict:
+        if ctx.engine.running:
+            raise HTTPException(status_code=409, detail="已有同步任务在运行")
+        count = ctx.state.reset_failed_backoff()
+        if not ctx.engine.try_run(None, trigger="retry"):
+            raise HTTPException(status_code=409, detail="已有同步任务在运行")
+        return {"reset": count, "started": True}
+
     @app.get("/api/runs", dependencies=[Depends(guard)])
     def runs(limit: int = 15) -> dict:
         return {"runs": ctx.state.runs(max(1, min(limit, 50)))}
@@ -141,7 +150,8 @@ def create_app(ctx: AppContext) -> FastAPI:
                 "last_error": s.get("last_error") or "",
             })
         out.sort(key=lambda x: x["pos"])
-        return {"tracks": out}
+        name = next((p["name"] for p in ctx.state.playlists() if p["pid"] == pid), str(pid))
+        return {"name": name, "tracks": out}
 
     @app.get("/api/logs", dependencies=[Depends(guard)])
     def logs(lines: int = 300) -> dict:

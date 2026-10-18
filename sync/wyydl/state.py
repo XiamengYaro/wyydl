@@ -147,6 +147,14 @@ class State:
             tuple(row[f] for f in _SONG_FIELDS),
         )
 
+    def reset_failed_backoff(self) -> int:
+        """清除失败歌曲的 24h 退避,让用户可立即验证修复后的取流逻辑。"""
+        cur = self._exec(
+            "UPDATE songs SET fail_count=0,downloaded_at='' "
+            "WHERE status='failed' OR status LIKE 'failed:%'"
+        )
+        return int(cur.rowcount or 0)
+
     # ---- runs ----
     def record_run(self, started: str, finished: str, status: str, summary: dict) -> int:
         cur = self._exec(

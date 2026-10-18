@@ -221,6 +221,16 @@ class NcmApi:
     def song_url(self, sid: int, level: str) -> dict:
         return self.song_url_batch([sid], level).get(sid, {})
 
+    def song_url_legacy(self, sid: int, br: int = 999000) -> dict:
+        """旧版取流接口,用作 v1 被解锁服务改写后丢失原生链接的兼容回退。"""
+        d = self.get("/song/url", id=sid, br=max(1, int(br)))
+        if d.get("code") != 200:
+            raise ApiError(f"song/url code={d.get('code')}")
+        for e in d.get("data") or []:
+            if e and e.get("id") is not None and int(e["id"]) == sid:
+                return e
+        return {}
+
     def lyric(self, sid: int) -> str | None:
         """歌词文本;None 表示获取失败(接口异常),空串表示无歌词。"""
         try:

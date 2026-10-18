@@ -28,6 +28,20 @@ def now_str() -> str:
     return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def has_full_stream(entry: dict | None) -> bool:
+    """判断取流响应是否为完整歌曲,排除空链接与试听片段。"""
+    if not isinstance(entry, dict):
+        return False
+    url = str(entry.get("url") or "").strip()
+    if not url.startswith(("http://", "https://")):
+        return False
+    trial = entry.get("freeTrialInfo")
+    if isinstance(trial, str):
+        trial = trial.strip().lower()
+        return trial in ("", "null", "none", "false")
+    return not bool(trial)
+
+
 class SyncEngine:
     def __init__(self, cfg: Config, state: State, api: NcmApi):
         self.cfg = cfg
@@ -385,18 +399,10 @@ class SyncEngine:
         meta["label"] = str(info.get("company") or "")
         fail = lambda reason: {"ok": False, "title": meta["title"], "artist": meta["artist"], "reason": reason}  # noqa: E731
 
-        # 取流:按音质协商结果逐档降档;即时取即时用,避免 CDN 签名链接排队过期(403)
-        entry = None
-        for lvl in quality.chain_from(want_level, self.cfg.quality_chain):
-            try:
-                e = self.api.song_url(sid, lvl)
-            except ApiError:
-                continue
-            if e.get("url") and not e.get("freeTrialInfo"):
-                entry = e
-                break
+        entry, stream_note = self._resolve_stream(sid, want_level)
         if not entry:
-            return fail("无可用音源(试听或下架)")
+            suffix = f";{stream_note}" if stream_note else ""
+            return fail(f"无完整音源(新版与兼容接口均未返回{suffix})")
 
         # 下载;403/410 视为签名链接过期或失效,自动重取一次新链接重试
         for attempt in (1, 2):
@@ -418,7 +424,7 @@ class SyncEngine:
                         e2 = self.api.song_url(sid, str(entry.get("level") or want_level))
                     except ApiError:
                         return fail(f"下载失败:HTTP {code}")
-                    if e2.get("url") and not e2.get("freeTrialInfo"):
+                    if has_full_stream(e2):
                         entry = e2
                         continue
                 return fail(f"下载失败:HTTP {code}" if code else f"下载失败:{e.__class__.__name__}")
@@ -474,6 +480,39 @@ class SyncEngine:
         log.info("[%s] %s - %s (%s)", kind, meta["artist"], meta["title"], entry.get("level") or want_level)
         return {"ok": True, "kind": kind, "level": str(entry.get("level") or want_level),
                 "title": meta["title"], "artist": meta["artist"], "warns": warns}
+
+    def _resolve_stream(self, sid: int, want_level: str) -> tuple[dict | None, str]:
+        """新版接口逐档取流,失败时用旧接口兜底。
+
+        部分部署的通用解锁逻辑会在匹配替代音源失败时清空 v1 的原生 URL;
+        旧版 /song/url 不经过该逻辑,可恢复实际可播放的歌曲。
+        """
+        notes: list[str] = []
+        levels = quality.chain_from(want_level, self.cfg.quality_chain)
+        for lvl in levels:
+            try:
+                entry = self.api.song_url(sid, lvl)
+            except ApiError as e:
+                notes.append(f"{lvl} 接口异常")
+                log.debug("歌曲 %s 取流 %s 失败:%s", sid, lvl, e)
+                continue
+            if has_full_stream(entry):
+                return entry, ""
+            notes.append(f"{lvl} 仅试听" if entry.get("url") else f"{lvl} 无链接")
+
+        try:
+            entry = self.api.song_url_legacy(sid)
+            if has_full_stream(entry):
+                log.info("歌曲 %s 新版接口未返回完整音源,兼容接口取流成功", sid)
+                entry["level"] = str(entry.get("level") or want_level)
+                return entry, ""
+            notes.append("兼容接口仅试听" if entry.get("url") else "兼容接口无链接")
+        except ApiError as e:
+            notes.append("兼容接口异常")
+            log.debug("歌曲 %s 兼容取流失败:%s", sid, e)
+
+        compact = "、".join(dict.fromkeys(notes[:4]))
+        return None, compact
 
     def _write_nfo(self, final: Path, meta: dict, detail: dict) -> None:
         """单曲 <歌名>.nfo(所有布局都写);专辑/歌手级 NFO 跟随布局目录结构。"""

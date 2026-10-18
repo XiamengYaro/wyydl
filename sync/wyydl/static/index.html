@@ -23,10 +23,11 @@
     --lg-ease:cubic-bezier(.22,.61,.36,1);
   }
   *{box-sizing:border-box}
+  html{overflow-x:clip;scroll-behavior:smooth}
   html,body{height:100%}
   body{margin:0;color:var(--text);background:var(--bg);
-    font:14px/1.65 ui-sans-serif,-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;
-    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+    font:15px/1.55 ui-sans-serif,-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:clip}
   /* 宽幅色调场:玻璃需要背后有层次,但保持安静 */
   body::before{content:"";position:fixed;inset:-20vmax;z-index:-2;pointer-events:none;
     background:
@@ -57,8 +58,7 @@
     background:linear-gradient(135deg,rgb(255 255 255 / 0.14),transparent 40%,rgb(255 255 255 / 0.05))}
 
   /* ===== 顶栏(导航层,玻璃最清晰) ===== */
-  header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-    padding:12px 22px;position:sticky;top:0;z-index:20;
+  header{padding:0 22px;position:sticky;top:0;z-index:20;
     border-bottom:1px solid var(--lg-border);background:rgb(14 16 22 / 0.97);
     box-shadow:0 10px 30px rgb(0 0 0 / 0.30)}
   @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
@@ -66,11 +66,22 @@
       -webkit-backdrop-filter:blur(26px) saturate(180%);backdrop-filter:blur(26px) saturate(180%)}
     body::before{animation:drift 44s var(--lg-ease) infinite alternate}
   }
-  header h1{font-size:16px;margin:0 4px 0 0;font-weight:650;letter-spacing:-.01em}
+  .topbar{display:flex;align-items:center;gap:14px;min-height:58px}
+  .brand{display:flex;align-items:baseline;gap:9px;min-width:0;margin-right:auto}
+  header h1{font-size:17px;margin:0;font-weight:680;white-space:nowrap}
   header h1 small{color:var(--dim);font-weight:400;margin-left:8px;font-size:12px}
+  .header-actions{display:flex;gap:8px;flex:none}
+  .header-meta{display:flex;align-items:center;gap:8px;overflow-x:auto;padding:0 0 10px;
+    scrollbar-width:none}
+  .header-meta::-webkit-scrollbar{display:none}
+  .section-nav{display:flex;align-items:center;gap:4px;overflow-x:auto;padding:0 0 9px;scrollbar-width:none}
+  .section-nav::-webkit-scrollbar{display:none}
+  .section-nav a{display:inline-flex;align-items:center;min-height:32px;padding:4px 10px;border-radius:8px;
+    color:var(--dim);font-size:12.5px;white-space:nowrap}
+  .section-nav a:hover{color:var(--text);background:rgb(255 255 255 / 0.06);text-decoration:none}
   .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;
     color:var(--dim);font-size:12px;white-space:nowrap;--lg-blur:14px;
-    box-shadow:inset 0 1px 0 rgb(255 255 255 / 0.08)}
+    box-shadow:inset 0 1px 0 rgb(255 255 255 / 0.08);flex:none}
   .chip b{color:var(--text);font-weight:600}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--dim);flex:none}
   .dot.ok{background:var(--ok);box-shadow:0 0 0 3px rgb(74 222 128 / 0.16)}
@@ -78,7 +89,10 @@
   .dot.run{background:var(--warn);animation:pulse 1.2s infinite}
   @keyframes pulse{50%{opacity:.35}}
 
-  main{padding:22px;max-width:1240px;margin:0 auto;display:grid;gap:18px}
+  main{padding:22px;max-width:1240px;margin:0 auto;display:grid;gap:18px;min-width:0}
+  section[id],div[id="localSection"]{scroll-margin-top:150px}
+  .conn-banner{margin:16px auto -4px;max-width:1196px;padding:10px 14px;border:1px solid rgb(248 113 113 / .32);
+    border-radius:10px;background:rgb(248 113 113 / .10);color:#fecaca;font-size:13px}
   .row{display:grid;gap:18px;grid-template-columns:1fr 1fr}
   @media(max-width:900px){.row{grid-template-columns:1fr}}
   .row>*{min-width:0}
@@ -86,11 +100,14 @@
   /* ===== 卡片 ===== */
   .card{border-radius:var(--radius);padding:18px 20px;min-width:0;--lg-blur:18px;
     box-shadow:var(--lg-shadow),inset 0 1px 0 rgb(255 255 255 / 0.10)}
-  .card h2{font-size:12.5px;margin:0 0 14px;color:var(--dim);font-weight:600;
-    letter-spacing:.08em;text-transform:none;display:flex;align-items:center;gap:8px}
+  .section-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+  .card h2{font-size:13px;margin:0;color:var(--dim);font-weight:650;letter-spacing:.06em;
+    text-transform:none;display:flex;align-items:center;gap:8px;min-width:0}
+  .section-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;min-width:0}
+  .section-actions input[type=text]{width:min(240px,100%)}
 
   /* ===== 控件 ===== */
-  .btn{border-radius:11px;padding:8px 15px;cursor:pointer;font-size:13px;font-weight:500;
+  .btn{border-radius:10px;padding:8px 15px;cursor:pointer;font-size:13.5px;font-weight:550;
     color:var(--text);--lg-blur:14px;box-shadow:0 4px 14px rgb(0 0 0 / 0.20),inset 0 1px 0 rgb(255 255 255 / 0.09);
     transition:transform .18s var(--lg-ease),background .18s var(--lg-ease),border-color .18s var(--lg-ease)}
   .btn:hover{border-color:var(--lg-border-strong);background:var(--lg-tint-strong);transform:translateY(-1px)}
@@ -100,14 +117,19 @@
     -webkit-backdrop-filter:none;backdrop-filter:none}
   .btn.primary:hover{background:linear-gradient(180deg,#ff7a8b,#ef4f65)}
   .btn.primary:disabled,.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
-  .btn.mini{padding:4px 10px;font-size:12px;border-radius:9px;--lg-blur:10px}
+  .btn.mini{padding:6px 11px;font-size:12.5px;border-radius:8px;--lg-blur:10px;min-height:34px}
+  .link-btn{border:0;background:none;color:var(--acc);padding:0;font:inherit;font-weight:600;
+    text-align:left;cursor:pointer;min-width:0;overflow-wrap:anywhere}
+  .link-btn:hover{text-decoration:underline}
   .btn:focus-visible,.chip:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{
     outline:2px solid rgb(255 255 255 / 0.55);outline-offset:2px}
 
   /* ===== 数据密集面:更实、更清晰 ===== */
+  .table-wrap{width:100%;max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;
+    border-radius:9px;scrollbar-width:thin}
   table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
   th{color:var(--dim);text-align:left;font-weight:600;padding:7px 10px;font-size:12px;
-    border-bottom:1px solid var(--lg-border);white-space:nowrap}
+    border-bottom:1px solid var(--lg-border);white-space:nowrap;background:rgb(15 18 25 / .94)}
   td{padding:8px 10px;border-bottom:1px solid rgb(255 255 255 / 0.06);word-break:break-word;
     font-variant-numeric:tabular-nums}
   tbody tr{transition:background .15s var(--lg-ease)}
@@ -134,8 +156,11 @@
     background-position:calc(100% - 16px) calc(50% + 1px),calc(100% - 11px) calc(50% + 1px);
     background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:32px}
 
-  .inline{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+  .inline{display:flex;gap:9px;flex-wrap:wrap;align-items:center;min-width:0}
   .inline input{flex:1;min-width:100px}
+  .toolbar-grid{display:grid;grid-template-columns:minmax(230px,1fr) minmax(160px,.55fr) auto auto;
+    gap:9px;align-items:center;margin-bottom:12px}
+  .toolbar-grid .btn{white-space:nowrap}
   .fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px 20px;margin-bottom:14px}
   .field{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--dim)}
   .field .hint{font-size:11px;opacity:.72;line-height:1.45}
@@ -162,10 +187,12 @@
   dialog{border-radius:20px;padding:24px;max-width:620px;width:94vw;color:var(--text);
     background:var(--lg-tint-dense);--lg-blur:30px;
     box-shadow:0 30px 70px rgb(0 0 0 / 0.60),inset 0 1px 0 rgb(255 255 255 / 0.14)}
+  dialog[open]{display:flex;flex-direction:column;max-height:calc(100dvh - 24px);overflow:hidden}
+  #dlgBody{min-height:0;overflow:auto}
   dialog::backdrop{background:rgb(4 6 10 / 0.62);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
-  dialog h2{font-weight:650;letter-spacing:-.01em}
+  dialog h2{font-weight:680;letter-spacing:0}
 
-  #toastBox{position:fixed;top:74px;right:18px;z-index:99;display:grid;gap:9px;max-width:340px}
+  #toastBox{position:fixed;top:150px;right:18px;z-index:99;display:grid;gap:9px;max-width:340px}
   .toast{background:var(--lg-tint-dense);border:1px solid var(--lg-border);border-left:3px solid #a8c4ff;
     border-radius:12px;padding:10px 14px;font-size:13px;color:var(--text);
     box-shadow:var(--lg-shadow);--lg-blur:24px;animation:toastIn .22s var(--lg-ease);
@@ -175,8 +202,8 @@
 
   #qrimg{width:230px;height:230px;background:#fff;border-radius:12px;display:block;margin:14px auto;
     box-shadow:0 12px 34px rgb(0 0 0 / 0.42)}
-  #tracks td:first-child{color:var(--dim);width:34px}
-  .stat-num{font-size:23px;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  #tracks td:first-child{color:var(--dim);width:40px}
+  .stat-num{font-size:24px;font-weight:680;font-variant-numeric:tabular-nums}
   .stats{display:flex;gap:28px;flex-wrap:wrap}
   .stats .muted{font-size:12px}
 
@@ -198,34 +225,84 @@
       transition-duration:.001ms!important}
     body::before{animation:none}
   }
+  @media (max-width:900px){
+    .toolbar-grid{grid-template-columns:1fr 1fr auto auto}
+    section[id],div[id="localSection"]{scroll-margin-top:142px}
+  }
+  @media (max-width:700px){
+    .data-table,.data-table tbody,.data-table tr,.data-table td{display:block;width:100%}
+    .data-table thead{display:none}
+    .data-table tr{padding:12px 0;border-bottom:1px solid rgb(255 255 255 / .08)}
+    .data-table tr:last-child{border-bottom:0;padding-bottom:0}
+    .data-table td{display:grid;grid-template-columns:74px minmax(0,1fr);gap:12px;align-items:center;
+      padding:4px 0;border:0;min-height:31px}
+    .data-table td::before{content:attr(data-label);color:var(--dim);font-size:12px}
+    .data-table td[data-label=""]::before,.data-table td.actions::before,.data-table td[colspan]::before{display:none}
+    .data-table td[data-label=""],.data-table td[colspan]{display:block}
+    .data-table td.actions{display:flex;justify-content:flex-end;gap:8px;padding-top:9px}
+    .data-table .name-cell{display:grid;grid-template-columns:74px minmax(0,1fr);gap:12px}
+    .table-wrap{border-radius:0;overflow:visible}
+    .table-wrap.modal-table{overflow:auto}
+  }
   @media (max-width:640px){
-    header{padding:10px 14px;gap:8px}
+    header{padding:0 14px}
+    .topbar{min-height:54px;gap:8px}
+    .brand{display:block}
+    header h1{font-size:15px;line-height:1.2}
+    header h1 small{display:block;margin:2px 0 0;font-size:10.5px}
+    .header-actions{gap:6px}
+    .header-actions .btn{padding:9px 12px;font-size:12.5px}
+    .header-meta{padding-bottom:7px}
+    .section-nav{padding-bottom:7px}
+    .section-nav a{min-height:36px;padding:6px 9px}
     main{padding:14px}
     .card{padding:15px 14px}
     /* 触控目标 >=44px */
     .btn{min-height:44px;padding:11px 15px}
-    .btn.mini{min-height:38px;padding:8px 12px}
+    .btn.mini{min-height:44px;padding:8px 12px}
     .chip{min-height:38px;padding:8px 12px}
     summary{min-height:44px}
     input[type=text],input[type=number],input[type=password],select{min-height:44px}
     .ckrow label{min-height:44px}
+    .toolbar-grid{grid-template-columns:1fr 1fr;gap:8px}
+    .toolbar-grid input:first-child{grid-column:1/-1}
+    .toolbar-grid .btn{width:100%}
+    .section-head{align-items:flex-start;margin-bottom:11px}
+    .section-actions{width:100%;justify-content:flex-start}
+    .section-actions input[type=text]{width:100%}
+    .section-actions .btn{flex:1}
+    .fgrid{grid-template-columns:1fr}
+    .stats{gap:20px}
+    .stat-num{font-size:22px}
     #toastBox{left:12px;right:12px;top:auto;bottom:160px;max-width:none}
   }
 </style>
 </head>
 <body>
 <header>
-  <h1>网易云歌单同步 <small id="ver"></small></h1>
-  <span class="chip"><span class="dot" id="dotCookie"></span>登录态 <b id="cookieTxt">…</b></span>
-  <span class="chip">下次运行 <b id="nextRun">-</b></span>
-  <span class="chip">计划 <b id="cronTxt">-</b></span>
-  <span class="chip">布局 <b id="layoutTxt">-</b></span>
-  <a id="newVer" href="https://github.com/XiamengYaro/wyydl/releases" target="_blank" style="display:none" class="chip" title="前往 Releases 下载新版本">🆕 新版本可用</a>
-  <span style="flex:1"></span>
-  <button class="btn primary" id="btnSync">立即同步</button>
-  <button class="btn" id="btnLogin">扫码登录</button>
+  <div class="topbar">
+    <div class="brand"><h1>网易云歌单同步 <small id="ver"></small></h1></div>
+    <div class="header-actions">
+      <button class="btn primary" id="btnSync">立即同步</button>
+      <button class="btn" id="btnLogin">扫码登录</button>
+    </div>
+  </div>
+  <div class="header-meta">
+    <span class="chip"><span class="dot" id="dotCookie"></span>登录态 <b id="cookieTxt">…</b></span>
+    <span class="chip">下次运行 <b id="nextRun">-</b></span>
+    <span class="chip">计划 <b id="cronTxt">-</b></span>
+    <span class="chip">布局 <b id="layoutTxt">-</b></span>
+    <a id="newVer" href="https://github.com/XiamengYaro/wyydl/releases" target="_blank" style="display:none" class="chip" title="前往 Releases 下载新版本">新版本可用</a>
+  </div>
+  <nav class="section-nav" aria-label="页面导航">
+    <a href="#playlistsSection">歌单</a>
+    <a href="#localSection">本地音乐</a>
+    <a href="#runsSection">运行记录</a>
+    <a href="#settingsSection">设置</a>
+  </nav>
 </header>
 
+<div class="conn-banner" id="connBanner" role="alert" hidden></div>
 <main>
   <section class="card" id="progressCard" style="display:none">
     <h2>同步进行中</h2>
@@ -239,59 +316,76 @@
     <div id="progRecent" class="recent" style="margin-top:0"></div>
   </section>
 
-  <section class="card">
-    <h2>歌单 <span class="muted" id="diskInfo" style="font-size:12px;font-weight:400"></span></h2>
-    <div class="inline" style="margin-bottom:12px">
+  <section class="card" id="playlistsSection">
+    <div class="section-head">
+      <h2>歌单</h2>
+      <span class="muted" id="diskInfo"></span>
+    </div>
+    <div class="toolbar-grid">
       <input type="text" id="plId" placeholder="歌单 ID(网页版歌单地址里的数字)">
-      <input type="text" id="plName" placeholder="自定义名称(可空)" style="max-width:200px">
+      <input type="text" id="plName" placeholder="自定义名称(可空)">
       <button class="btn" id="btnAdd">添加</button>
       <button class="btn" id="btnAcc">账号歌单</button>
-      <select id="srcSel" style="max-width:150px;width:auto">
+    </div>
+    <div class="inline" style="margin-bottom:12px">
+      <select id="srcSel" style="max-width:170px">
         <option value="cloud">云盘</option>
         <option value="daily">每日推荐</option>
         <option value="fm">私人 FM</option>
       </select>
       <button class="btn" id="btnAddSrc">添加特殊源</button>
     </div>
-    <table><thead><tr><th>歌单</th><th>曲目</th><th>已入库</th><th>等待</th><th>失败</th><th>最近同步</th><th></th></tr></thead>
-    <tbody id="plBody"></tbody></table>
-    <p class="muted">下载布局在下方「设置 → 下载文件布局」中选择(按专辑/按歌手/歌曲平铺),每个歌单都会生成同名 .m3u8(位于音乐根目录)。</p>
+    <div class="table-wrap">
+      <table class="data-table"><thead><tr><th>歌单</th><th>曲目</th><th>已入库</th><th>等待</th><th>失败</th><th>最近同步</th><th></th></tr></thead>
+      <tbody id="plBody"></tbody></table>
+    </div>
   </section>
 
-  <section class="card">
-    <h2>本地音乐
-      <span style="float:right">
-        <input type="text" id="localSearch" placeholder="搜索标题/歌手/专辑…" style="max-width:200px;width:auto;display:inline-block;margin-right:10px">
-        <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--dim);margin-right:10px">
+  <section class="card" id="localSection">
+    <div class="section-head">
+      <h2>本地音乐</h2>
+      <div class="section-actions">
+        <input type="text" id="localSearch" placeholder="搜索标题、歌手或专辑">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--dim)">
           <input type="checkbox" id="onlyMissing"> 仅显示缺失</label>
         <button class="btn mini" id="btnScan">刷新列表</button>
-      </span>
-    </h2>
-    <p class="muted">本地音乐库。可对任意文件「重新刮削」(按已匹配信息重新抓取标签/封面/歌词/NFO)、「匹配」(手动指定网易云曲目)或「编辑」(直接修改标题/歌手/专辑/音轨)。</p>
-    <table><thead><tr><th>标题</th><th>歌手</th><th>专辑</th><th>状态</th><th></th></tr></thead>
-    <tbody id="localBody"><tr><td colspan="5" class="muted">点击「刷新列表」加载</td></tr></tbody></table>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table"><thead><tr><th>标题</th><th>歌手</th><th>专辑</th><th>状态</th><th></th></tr></thead>
+      <tbody id="localBody"><tr><td colspan="5" class="muted">点击「刷新列表」加载</td></tr></tbody></table>
+    </div>
   </section>
 
   <div class="row">
-    <section class="card">
-      <h2>最近运行</h2>
+    <section class="card" id="runsSection">
+      <div class="section-head">
+        <h2>最近运行</h2>
+        <button class="btn mini" id="btnRetryFailed" hidden>重试失败</button>
+      </div>
       <div class="stats" id="lastStats" style="margin-bottom:10px"></div>
-      <table><thead><tr><th>时间</th><th>状态</th><th>新增</th><th>升级</th><th>失败</th></tr></thead>
-      <tbody id="runBody"></tbody></table>
+      <div class="table-wrap">
+        <table class="data-table"><thead><tr><th>时间</th><th>状态</th><th>新增</th><th>升级</th><th>失败</th></tr></thead>
+        <tbody id="runBody"></tbody></table>
+      </div>
     </section>
     <section class="card">
-      <h2>运行日志 <button class="btn mini" id="btnLog" style="float:right">刷新</button></h2>
+      <div class="section-head">
+        <h2>运行日志</h2>
+        <button class="btn mini" id="btnLog">刷新</button>
+      </div>
       <div id="log">(空)</div>
     </section>
   </div>
 
-  <section class="card">
-    <h2>设置
-      <span style="float:right">
+  <section class="card" id="settingsSection">
+    <div class="section-head">
+      <h2>设置</h2>
+      <div class="section-actions">
         <button class="btn mini" id="btnNotify">测试飞书通知</button>
         <button class="btn mini primary" id="btnSaveSettings">保存设置</button>
-      </span>
-    </h2>
+      </div>
+    </div>
 
     <div class="sect">同步计划与文件</div>
     <div class="fgrid">
@@ -398,26 +492,65 @@
 const $ = s => document.querySelector(s);
 let token = localStorage.getItem('wyydl_token') || '';
 let pollTimer = null;
+let authPrompt = null;
+let authEpoch = 0;
+let authBlocked = false;
+let playlistSignature = '';
+let connErrorShown = false;
 
-async function api(path, opt = {}) {
-  opt.headers = Object.assign({'X-Token': token, 'Content-Type': 'application/json'}, opt.headers || {});
-  if (opt.body && typeof opt.body !== 'string') opt.body = JSON.stringify(opt.body);
-  const r = await fetch(path, opt);
-  if (r.status === 401) {
-    token = prompt('请输入访问令牌(web.token,留空表示未启用):') || '';
-    localStorage.setItem('wyydl_token', token);
-    throw new Error('401');
+async function api(path, opt = {}, retried = false) {
+  if (authBlocked && !retried) throw new Error('访问令牌无效,请刷新页面后重试');
+  const epochAtRequest = authEpoch;
+  const requestOpt = {...opt, headers: {'X-Token': token, 'Content-Type': 'application/json', ...(opt.headers || {})}};
+  if (requestOpt.body && typeof requestOpt.body !== 'string') requestOpt.body = JSON.stringify(requestOpt.body);
+  const r = await fetch(path, requestOpt);
+  if (r.status === 401 && retried) {
+    authBlocked = true;
+    throw new Error('访问令牌无效,请刷新页面后重试');
+  }
+  if (r.status === 401 && !retried) {
+    if (authEpoch !== epochAtRequest) return api(path, opt, true);
+    if (!authPrompt) {
+      authPrompt = (async () => {
+        token = prompt('请输入面板访问令牌(留空表示未启用):') || '';
+        localStorage.setItem('wyydl_token', token);
+        authEpoch += 1;
+      })().finally(() => { authPrompt = null; });
+    }
+    await authPrompt;
+    return api(path, opt, true);
   }
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status);
   return r.json();
 }
 
-function esc(s){return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function esc(s){return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function showConnectionError(e) {
+  const el = $('#connBanner');
+  const hint = authBlocked ? '请刷新页面重新输入访问令牌。' : '页面会自动重试。';
+  el.textContent = '面板连接失败:' + (e?.message || '未知错误') + '。' + hint;
+  el.hidden = false;
+  connErrorShown = true;
+}
+function clearConnectionError() {
+  if (!connErrorShown) return;
+  $('#connBanner').hidden = true;
+  connErrorShown = false;
+}
+function formatDateTime(v) {
+  if (!v) return '-';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v).replace('T', ' ');
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
+  }).format(d);
+}
 
 /* ---------- 统一提示 ---------- */
 function toast(msg, type = 'info') {
   const el = document.createElement('div');
   el.className = 'toast ' + type;
+  el.setAttribute('role', type === 'err' ? 'alert' : 'status');
   el.textContent = msg;
   $('#toastBox').appendChild(el);
   setTimeout(() => el.remove(), 4500);
@@ -430,11 +563,13 @@ function confirmDo(question, fn) {  // 确认后执行
 /* ---------- 状态轮询 ---------- */
 async function refreshStatus() {
   let s;
-  try { s = await api('/api/status'); } catch { return; }
+  try { s = await api('/api/status'); }
+  catch (e) { showConnectionError(e); return; }
+  clearConnectionError();
   $('#ver').textContent = 'v' + s.version;
   $('#dotCookie').className = 'dot ' + (s.cookie_ok ? 'ok' : 'err');
   $('#cookieTxt').textContent = s.cookie_ok ? '有效' : '失效,请扫码';
-  $('#nextRun').textContent = (s.next_run || '-').replace('T', ' ');
+  $('#nextRun').textContent = formatDateTime(s.next_run);
   $('#cronTxt').textContent = s.schedule;
   $('#layoutTxt').textContent = s.layout === 'album' ? '按专辑' : (s.layout === 'artist' ? '按歌手' : (s.layout === 'flat' ? '歌曲平铺' : '按歌单'));
   if (s.disk && s.disk.free_gb != null) {
@@ -472,20 +607,26 @@ async function refreshStatus() {
         ${i.ok ? `<span class="tag lv">${esc(i.level)}</span>`
                : `<span class="muted">${esc(i.reason || '')}</span>`}</div>`).join('');
   }
-  $('#plBody').innerHTML = s.playlists.map(p => `
+  const signature = JSON.stringify(s.playlists);
+  if (signature !== playlistSignature) {
+    playlistSignature = signature;
+    $('#plBody').innerHTML = s.playlists.map(p => `
     <tr>
-      <td><a href="javascript:viewTracks(${p.id},'${esc(p.name)}')">${esc(p.name || p.id)}</a>
-          ${p.configured ? '' : '<span class="tag">已移除</span>'}</td>
-      <td>${p.total}</td>
-      <td><span class="tag ${p.ok ? 'ok' : ''}">${p.ok}</span></td>
-      <td><span class="tag">${p.pending}</span></td>
-      <td><span class="tag ${p.failed ? 'bad' : ''}">${p.failed}</span></td>
-      <td class="muted">${esc(p.last_sync || '-')}</td>
-      <td style="white-space:nowrap">
+      <td data-label="歌单" class="name-cell">
+        <button type="button" class="link-btn" onclick="viewTracks(${p.id})">${esc(p.name || p.id)}</button>
+        ${p.configured ? '' : '<span class="tag">已移除</span>'}
+      </td>
+      <td data-label="曲目">${p.total}</td>
+      <td data-label="已入库"><span class="tag ${p.ok ? 'ok' : ''}">${p.ok}</span></td>
+      <td data-label="等待"><span class="tag">${p.pending}</span></td>
+      <td data-label="失败"><span class="tag ${p.failed ? 'bad' : ''}">${p.failed}</span></td>
+      <td data-label="最近同步" class="muted">${esc(p.last_sync || '-')}</td>
+      <td data-label="操作" class="actions">
         <button class="btn mini" onclick="syncOne(${p.id})">同步</button>
         <button class="btn mini" onclick="removePl(${p.id})">移除</button>
       </td>
     </tr>`).join('') || '<tr><td colspan="7" class="muted">尚未添加歌单</td></tr>';
+  }
 }
 
 async function refreshRuns() {
@@ -495,17 +636,23 @@ async function refreshRuns() {
     const m = last.summary;
     $('#lastStats').innerHTML = [
       ['新增', m.added, 'var(--ok)'], ['升级', m.upgraded, '#7aa7e8'],
-      ['失败', m.failed, 'var(--err)'], ['移除', m.removed, ''],
+      ['失败', m.failed, 'var(--err)'], ['部分', m.partial, 'var(--warn)'], ['移除', m.removed, ''],
     ].map(([k, v, c]) =>
       `<div><div class="stat-num" style="color:${c || 'var(--text)'}">${v ?? 0}</div><div class="muted">${k}</div></div>`).join('');
+    $('#btnRetryFailed').hidden = !(m.failed > 0);
   }
-  $('#runBody').innerHTML = runs.map(r => `
+  const statusText = {ok: '成功', error: '异常', login_expired: '登录失效', disk_full: '空间不足'};
+  $('#runBody').innerHTML = runs.map(r => {
+    const sm = r.summary || {};
+    return `
     <tr>
-      <td class="muted">${esc(r.finished)}</td>
-      <td><span class="tag ${r.status === 'ok' ? 'ok' : 'bad'}">${esc(r.status)}</span></td>
-      <td>${r.summary.added ?? 0}</td><td>${r.summary.upgraded ?? 0}</td>
-      <td>${r.summary.failed ?? 0}</td>
-    </tr>`).join('');
+      <td data-label="时间" class="muted">${esc(r.finished)}</td>
+      <td data-label="状态"><span class="tag ${r.status === 'ok' ? 'ok' : 'bad'}">${esc(statusText[r.status] || r.status)}</span></td>
+      <td data-label="新增">${sm.added ?? 0}</td>
+      <td data-label="升级">${sm.upgraded ?? 0}</td>
+      <td data-label="失败">${sm.failed ?? 0}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="5" class="muted">暂无运行记录</td></tr>';
 }
 
 async function refreshLogs() {
@@ -583,6 +730,13 @@ $('#btnSync').onclick = () => confirmDo('立即同步所有已配置目标?', as
   try { await api('/api/sync', {method: 'POST', body: {}}); toast('已开始同步', 'ok'); refreshStatus(); }
   catch (e) { toast(e.message, 'err'); }
 });
+$('#btnRetryFailed').onclick = () => confirmDo('清除失败退避并立即重试这些歌曲?', async () => {
+  try {
+    const r = await api('/api/retry-failed', {method: 'POST'});
+    toast(`已重置 ${r.reset} 首失败歌曲,开始重试`, 'ok');
+    refreshStatus(); refreshRuns();
+  } catch (e) { toast(e.message, 'err'); }
+});
 $('#btnAdd').onclick = () => {
   const id = $('#plId').value.trim();
   if (!id) return toast('请先输入歌单 ID', 'warn');
@@ -647,25 +801,32 @@ $('#btnNotify').onclick = () => confirmDo('保存当前设置并发送测试通�
 
 /* ---------- 弹窗 ---------- */
 const dlg = $('#dlg');
-function showDialog(html) { $('#dlgBody').innerHTML = html; dlg.showModal(); }
+function showDialog(html) { $('#dlgBody').innerHTML = html; if (!dlg.open) dlg.showModal(); }
 dlg.addEventListener('close', () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } $('#btnLogin').disabled = false; });
 
-async function viewTracks(id, name) {
-  const { tracks } = await api('/api/tracks/' + id);
-  const rows = tracks.map(t => {
-    let st = ['等待', ''];
-    if (t.status === 'ok') st = ['已入库', 'ok'];
-    else if (t.status === 'failed') st = ['失败', 'bad'];
-    else if (t.status === 'removed') st = ['已移除', ''];
-    const dup = t.dup ? '<span class="tag warn">重复</span>' : '';
-    const reason = (t.status === 'failed' && t.last_error)
-      ? `<button class="btn mini" data-reason="${esc(t.last_error)}" onclick="toast(this.dataset.reason,'warn')">原因</button>` : '';
-    return `<tr><td>${t.pos + 1}</td><td>${esc(t.title)}</td><td class="muted">${esc(t.artist)}</td>
-      <td><span class="tag ${st[1]}">${st[0]}</span> ${dup}</td>
-      <td><span class="tag lv">${esc(t.level)}</span></td><td>${reason}</td></tr>`;
-  }).join('');
-  showDialog(`<h2 style="margin:0 0 10px">${esc(name)} · ${tracks.length} 首</h2>
-    <div style="max-height:60vh;overflow:auto"><table><thead><tr><th>#</th><th>标题</th><th>歌手</th><th>状态</th><th>音质</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`);
+async function viewTracks(id) {
+  showDialog('<p class="muted">正在加载曲目…</p>');
+  try {
+    const { name, tracks } = await api('/api/tracks/' + id);
+    const rows = tracks.map(t => {
+      let st = ['等待', ''];
+      if (t.status === 'ok') st = ['已入库', 'ok'];
+      else if (t.status === 'failed') st = ['失败', 'bad'];
+      else if (t.status === 'removed') st = ['已移除', ''];
+      const dup = t.dup ? '<span class="tag warn">重复</span>' : '';
+      const reason = (t.status === 'failed' && t.last_error)
+        ? `<button class="btn mini" data-reason="${esc(t.last_error)}" onclick="toast(this.dataset.reason,'warn')">原因</button>` : '';
+      return `<tr><td data-label="#">${t.pos + 1}</td><td data-label="标题">${esc(t.title)}</td>
+        <td data-label="歌手" class="muted">${esc(t.artist)}</td>
+        <td data-label="状态"><span class="tag ${st[1]}">${st[0]}</span> ${dup}</td>
+        <td data-label="音质"><span class="tag lv">${esc(t.level)}</span></td>
+        <td data-label="操作" class="actions">${reason}</td></tr>`;
+    }).join('');
+    showDialog(`<h2 style="margin:0 0 10px">${esc(name)} · ${tracks.length} 首</h2>
+      <div class="table-wrap modal-table" style="max-height:60vh"><table class="data-table"><thead><tr><th>#</th><th>标题</th><th>歌手</th><th>状态</th><th>音质</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`);
+  } catch (e) {
+    showDialog(`<p style="color:var(--err)">加载失败:${esc(e.message)}</p>`);
+  }
 }
 
 /* ---------- 扫码登录 ---------- */
@@ -687,7 +848,7 @@ async function startQr() {
     $('#qrMsg').textContent = r.message;
     if (r.saved) {
       stopQr();
-      $('#qrMsg').innerHTML = '<span style="color:var(--ok)">✅ 登录成功,凭证已保存</span>';
+      $('#qrMsg').innerHTML = '<span style="color:var(--ok)">登录成功,凭证已保存</span>';
       setTimeout(() => { dlg.close(); refreshStatus(); }, 900);
     } else if (r.code === 800 || r.code === 803) {
       stopQr();  // 过期,或确认了但没拿到凭证 → 都停在明确提示上
@@ -719,13 +880,13 @@ function renderLocal() {
       .some(v => (v || '').toLowerCase().includes(kw)));
   $('#localBody').innerHTML = rows.map(({f, i}) => `
     <tr>
-      <td>${esc(f.title || f.name)}</td>
-      <td class="muted">${esc(f.artist)}</td>
-      <td class="muted">${esc(f.album)}</td>
-      <td><span class="tag ${f.missing ? (f.in_db ? 'bad' : '') : 'ok'}">${f.missing ? (f.in_db ? (f.status === 'failed' ? '失败' : '缺失') : '未入库') : '已入库'}</span>
+      <td data-label="标题">${esc(f.title || f.name)}</td>
+      <td data-label="歌手" class="muted">${esc(f.artist)}</td>
+      <td data-label="专辑" class="muted">${esc(f.album)}</td>
+      <td data-label="状态"><span class="tag ${f.missing ? (f.in_db ? 'bad' : '') : 'ok'}">${f.missing ? (f.in_db ? (f.status === 'failed' ? '失败' : '缺失') : '未入库') : '已入库'}</span>
         ${f.dup ? '<span class="tag warn">重复</span>' : ''}
         ${f.status === 'failed' && f.last_error ? `<button class="btn mini" data-reason="${esc(f.last_error)}" onclick="toast(this.dataset.reason,'warn')">原因</button>` : ''}</td>
-      <td style="white-space:nowrap">
+      <td data-label="操作" class="actions">
         <button class="btn mini" onclick="refetchFile(${i})">重刮削</button>
         <button class="btn mini" onclick="openMatch(${i})">匹配</button>
         <button class="btn mini" onclick="openEdit(${i})">编辑</button>
@@ -764,12 +925,12 @@ async function doSearch(kw) {
   catch (e) { return el.innerHTML = '搜索失败:' + e.message; }
   el.innerHTML = d.songs.map(s => `
     <div class="inline" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 2px;cursor:pointer"
-         onclick="pickMatch(${s.id},'${esc(s.name)}')">
+         onclick="pickMatch(${s.id})">
       <span>${esc(s.name)} <span class="muted">${esc(s.artists)} · ${esc(s.album)}</span></span>
       <button class="btn mini">匹配</button>
     </div>`).join('') || '<span class="muted">无结果</span>';
 }
-async function pickMatch(sid, name) {
+async function pickMatch(sid) {
   try {
     const r = await api('/api/local/match', {method: 'POST', body: {sid, path: currentMatchPath}});
     toast(`已匹配:${r.artist} - ${r.title}` + (r.warns && r.warns.length ? `\n提示:${r.warns.join('、')}` : ''), 'ok');
@@ -806,19 +967,25 @@ async function checkUpgrade() {
   try {
     const u = await api('/api/upgrade');
     $('#newVer').style.display = u.has_update ? '' : 'none';
-    if (u.has_update) $('#newVer').textContent = `🆕 新版本 ${u.latest} 可用`;
+    if (u.has_update) $('#newVer').textContent = `新版本 ${u.latest} 可用`;
   } catch (e) { /* 静默 */ }
 }
 
 /* ---------- 初始化 ---------- */
 async function init() {
-  await Promise.all([refreshStatus(), refreshRuns(), refreshLogs(), loadSettings()]);
+  const results = await Promise.allSettled([refreshStatus(), refreshRuns(), refreshLogs(), loadSettings()]);
+  const failed = results.find(x => x.status === 'rejected');
+  if (failed) showConnectionError(failed.reason);
+  try {
+    const { content } = await api('/api/config');
+    $('#cfgText').value = content;
+  } catch (e) {
+    showConnectionError(e);
+  }
   checkUpgrade();
-  const { content } = await api('/api/config');
-  $('#cfgText').value = content;
   setInterval(refreshStatus, 2000);
-  setInterval(refreshRuns, 15000);
-  setInterval(refreshLogs, 10000);
+  setInterval(() => refreshRuns().catch(showConnectionError), 15000);
+  setInterval(() => refreshLogs().catch(showConnectionError), 10000);
   setInterval(checkUpgrade, 600000);
 }
 init().catch(e => console.error(e));

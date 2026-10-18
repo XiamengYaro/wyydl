@@ -118,6 +118,9 @@ a = _mock_api([{"playlist": {"trackIds": []}},
 ok("trackIds 空时兜底分页", [t["id"] for t in a.playlist_tracks(1)] == [1, 2])
 a = _mock_api([{"songs": [{"id": 1, "name": "S"}], "privileges": [{"id": 1, "maxBrLevel": "hires"}]}])
 ok("详情合并音质权限", a.song_detail([1])[0]["privilege"]["maxBrLevel"] == "hires")
+a = _mock_api([{"code": 200, "data": [
+    {"id": 1, "url": "https://cdn.example/1.mp3", "level": "standard", "type": "mp3"}]}])
+ok("旧版取流兼容接口", a.song_url_legacy(1)["url"].startswith("https://"))
 a = _mock_api([{"profile": {"userId": 9}},
                {"playlist": [{"id": 1}, {"id": 2}], "more": True},
                {"playlist": [{"id": 3}], "more": False}])
@@ -142,7 +145,13 @@ _r2 = _ET.parse(_p2).getroot()
 ok("专辑 NFO 曲目排序", [t.findtext("title") for t in _r2.findall("track")] == ["A", "B"])
 
 # ---- 下载进度回调与活动列表 ----
-from wyydl.syncer import SyncEngine  # noqa: E402
+from wyydl.syncer import SyncEngine, has_full_stream  # noqa: E402
+
+ok("完整链接识别", has_full_stream({"url": "https://cdn/x.mp3", "freeTrialInfo": None}))
+ok("字符串 null 不是试听", has_full_stream({"url": "https://cdn/x.mp3", "freeTrialInfo": "null"}))
+ok("试听片段被拒绝", not has_full_stream(
+    {"url": "https://cdn/x.mp3", "freeTrialInfo": {"start": 0, "end": 30}}))
+ok("空链接被拒绝", not has_full_stream({"url": None}))
 
 eng = SyncEngine(cfg, st, _NcmApi("http://127.0.0.1:1", config.load_music_u, (0.0, 0.0)))
 eng.active[1] = {"title": "T", "artist": "A", "downloaded": 0, "total": 100}
@@ -150,11 +159,27 @@ eng._dl_tick(1, 50, 200)
 ok("下载进度回调", eng.active[1]["downloaded"] == 50 and eng.active[1]["total"] == 200)
 eng.active.pop(1)
 ok("活动列表清理", not eng.active)
+cfg.d["quality"]["chain"] = CHAIN
+_engStream = SyncEngine(cfg, st, _mock_api([
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": "https://cdn/trial.mp3",
+                            "freeTrialInfo": {"start": 0, "end": 30}}]},
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": None}]},
+    {"code": 200, "data": [{"id": 1, "url": "https://cdn/full.mp3",
+                            "level": "standard", "type": "mp3"}]},
+]))
+_stream, _note = _engStream._resolve_stream(1, "jymaster")
+ok("v1 无完整音源时回退旧接口", bool(_stream) and _stream["url"].endswith("full.mp3") and not _note)
 
 # ---- fpk 包完整性(compose 镜像占位/无重复键/向导字段) ----
 import subprocess as _sp  # noqa: E402
 import yaml as _yaml  # noqa: E402
 
+_manifest_version = next(line.split("=", 1)[1].strip() for line in
+                        open("../fpk/manifest", encoding="utf-8")
+                        if line.startswith("version"))
 for _cf in ["../fpk/app/docker/docker-compose.yaml", "../fpk/app/docker/docker-compose.yaml.tpl"]:
     _txt = open(_cf, encoding="utf-8").read()
     _d = _yaml.safe_load(_txt)
@@ -165,8 +190,17 @@ for _cf in ["../fpk/app/docker/docker-compose.yaml", "../fpk/app/docker/docker-c
     ok(f"ncm-api 镜像未被误改: {_cf.split('/')[-1]}",
        _svc["ncm-api"]["image"] == "moefurina/ncm-api:latest")
     _img = _svc["wyydl-sync"]["image"]
-    ok(f"镜像为 wyydl-sync 或占位符: {_cf.split('/')[-1]}",
-       "wyydl-sync" in _img or _img.strip() == "__WYYDL_IMAGE__")
+    ok(f"镜像版本与 manifest 一致: {_cf.split('/')[-1]}",
+       _img.endswith(f":v{_manifest_version}") or _img.strip() == "__WYYDL_IMAGE__")
+
+_local_tpl = _yaml.safe_load(open(
+    "../fpk/app/docker/docker-compose.local.yaml.tpl", encoding="utf-8"))
+_local_svc = (_local_tpl.get("services") or {}).get("wyydl-sync") or {}
+ok("本地构建模板启用 build", bool(_local_svc.get("build")))
+ok("本地构建模板使用独立镜像 tag", _local_svc.get("image") == "__WYYDL_LOCAL_IMAGE__")
+_build_sh = open("../fpk/build.sh", encoding="utf-8").read()
+ok("fpk 支持 image/local 两种构建模式",
+   'WYYDL_BUILD_MODE:-image' in _build_sh and 'WYYDL_BUILD_MODE' in _build_sh)
 
 _wi = json.load(open("../fpk/wizard/install", encoding="utf-8"))
 _fields = [i.get("field") for i in _wi[0]["items"]]
@@ -213,6 +247,11 @@ ok("特殊源常量", _SRC["cloud"] == -1 and _SRC["daily"] == -2 and _SRCN["fm"
 
 st.upsert_song(sid=401, title="坏歌", fail_count=3, downloaded_at="2026-08-29 00:00:00")
 ok("fail_count 读写", st.song(401)["fail_count"] == 3)
+st.upsert_song(sid=402, title="待重试", status="failed", fail_count=3,
+               downloaded_at="2026-08-29 00:00:00")
+_reset_count = st.reset_failed_backoff()
+ok("失败退避可清除", _reset_count >= 2 and st.song(402)["fail_count"] == 0
+   and st.song(402)["downloaded_at"] == "")
 _engF = SyncEngine(config.Config.load(), st, _mock_api([]))
 _engF._note_fail(401, "无可用音源(试听或下架)")
 ok("失败原因持久化", st.song(401)["status"] == "failed"
@@ -374,5 +413,17 @@ ok("通知事件生效", cfg.d["notify"]["events"]["on_failed"] is False
 ok("新配置项生效", cfg.d["lyrics"]["yrc"] is True and cfg.d["limits"]["max_per_run"] == 5
    and cfg.d["limits"]["min_free_space"] == 1 and cfg.d["trash_retention_days"] == 7)
 ok("表单保存不影响歌单与 api_base", cfg.playlist_ids() == [999] and cfg.d["api_base"].startswith("http"))
+
+st.upsert_song(sid=403, title="立即重试", status="failed", fail_count=3,
+               downloaded_at="2026-08-29 00:00:00")
+_retry_calls = []
+_engRetry = type("E", (), {
+    "running": False,
+    "try_run": lambda self, ids=None, trigger="m": (_retry_calls.append(trigger) or True),
+})()
+_clientRetry = TestClient(create_app(AppContext(cfg=cfg, state=st, api=api, engine=_engRetry)))
+_rr = _clientRetry.post("/api/retry-failed", headers={"X-Token": "t1"})
+ok("面板可立即重试失败歌曲", _rr.status_code == 200 and _rr.json()["reset"] >= 1
+   and _retry_calls == ["retry"] and st.song(403)["fail_count"] == 0)
 
 print(f"\n全部 {passed} 项通过 ✅")
