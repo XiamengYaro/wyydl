@@ -20,7 +20,7 @@ services:
     networks: [wyydl]
 
   wyydl-sync:
-    image: ghcr.io/xiamengyaro/wyydl/wyydl-sync:v2.1.3
+    image: ghcr.io/xiamengyaro/wyydl/wyydl-sync:v2.2.1
     container_name: wyydl-sync
     restart: unless-stopped
     depends_on: [ncm-api]

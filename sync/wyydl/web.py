@@ -23,7 +23,7 @@ from .syncer import SOURCE_PID, SyncEngine
 
 log = logging.getLogger("wyydl.web")
 
-_INDEX = Path(__file__).parent / "static" / "index.html"
+_INDEX = Path(__file__).parent / "static" / "app.html"
 
 _QR_MSG = {800: "二维码已过期", 801: "等待扫码", 802: "已扫码,请在手机上确认", 803: "登录成功"}
 
@@ -124,20 +124,25 @@ def create_app(ctx: AppContext) -> FastAPI:
         return {"started": True}
 
     @app.post("/api/retry-failed", dependencies=[Depends(guard)])
-    def retry_failed() -> dict:
+    def retry_failed(body: Optional[RetryBody] = None) -> dict:
         if ctx.engine.running:
             raise HTTPException(status_code=409, detail="已有同步任务在运行")
-        count = ctx.state.reset_failed_backoff()
-        if not ctx.engine.try_run(None, trigger="retry"):
+        playlist_ids = body.playlists if body else None
+        song_ids = ctx.state.failed_song_ids(playlist_ids)
+        if not song_ids:
+            return {"reset": 0, "started": False, "songs": 0}
+        count = ctx.state.reset_failed_backoff(song_ids)
+        if not ctx.engine.try_run(playlist_ids, trigger="retry", song_ids=song_ids):
             raise HTTPException(status_code=409, detail="已有同步任务在运行")
-        return {"reset": count, "started": True}
+        return {"reset": count, "started": True, "songs": len(song_ids)}
 
     @app.get("/api/runs", dependencies=[Depends(guard)])
     def runs(limit: int = 15) -> dict:
         return {"runs": ctx.state.runs(max(1, min(limit, 50)))}
 
     @app.get("/api/tracks/{pid}", dependencies=[Depends(guard)])
-    def tracks(pid: int) -> dict:
+    def tracks(pid: int, limit: int = 100, offset: int = 0,
+               q: str = "", status: str = "all") -> dict:
         counts = ctx.state.membership_counts()
         out = []
         for sid, pos in ctx.state.playlist_songs(pid):
@@ -150,8 +155,30 @@ def create_app(ctx: AppContext) -> FastAPI:
                 "last_error": s.get("last_error") or "",
             })
         out.sort(key=lambda x: x["pos"])
+        total = len(out)
+        stats = {
+            "all": total,
+            "ok": sum(1 for x in out if x["status"] == "ok"),
+            "failed": sum(1 for x in out if x["status"].startswith("failed")),
+            "pending": sum(1 for x in out if x["status"] in ("", "new")),
+        }
+        needle = q.strip().casefold()
+        if needle:
+            out = [x for x in out if needle in " ".join(
+                (x["title"], x["artist"], x["album"])).casefold()]
+        if status == "ok":
+            out = [x for x in out if x["status"] == "ok"]
+        elif status == "failed":
+            out = [x for x in out if x["status"].startswith("failed")]
+        elif status == "pending":
+            out = [x for x in out if x["status"] in ("", "new")]
+        filtered_total = len(out)
+        limit = max(1, min(int(limit), 500))
+        offset = max(0, int(offset))
+        page = out[offset:offset + limit]
         name = next((p["name"] for p in ctx.state.playlists() if p["pid"] == pid), str(pid))
-        return {"name": name, "tracks": out}
+        return {"name": name, "tracks": page, "total": filtered_total,
+                "all_total": total, "offset": offset, "limit": limit, "stats": stats}
 
     @app.get("/api/logs", dependencies=[Depends(guard)])
     def logs(lines: int = 300) -> dict:
@@ -396,6 +423,20 @@ def create_app(ctx: AppContext) -> FastAPI:
     def local_files() -> dict:
         return {"files": ctx.engine.local_files()}
 
+    @app.get("/api/local/duplicates", dependencies=[Depends(guard)])
+    def local_duplicates() -> dict:
+        groups = ctx.engine.duplicate_files()
+        return {"groups": groups, "count": sum(len(g["files"]) - 1 for g in groups)}
+
+    @app.post("/api/local/quarantine", dependencies=[Depends(guard)])
+    def local_quarantine(body: PathsBody) -> dict:
+        moved = ctx.engine.quarantine_paths(body.paths, reason="manual-duplicate")
+        return {"moved": len(moved), "items": moved}
+
+    @app.post("/api/trash/clear", dependencies=[Depends(guard)])
+    def clear_trash() -> dict:
+        return {"deleted": ctx.engine.clear_trash()}
+
     @app.get("/api/search", dependencies=[Depends(guard)])
     def search_songs(keywords: str = "", limit: int = 15) -> dict:
         kw = keywords.strip()
@@ -439,6 +480,10 @@ class SyncBody(BaseModel):
     playlists: Optional[List[int]] = None
 
 
+class RetryBody(BaseModel):
+    playlists: Optional[List[int]] = None
+
+
 class MatchBody(BaseModel):
     sid: int
     path: str
@@ -446,6 +491,10 @@ class MatchBody(BaseModel):
 
 class PathBody(BaseModel):
     path: str
+
+
+class PathsBody(BaseModel):
+    paths: List[str]
 
 
 class EditBody(BaseModel):

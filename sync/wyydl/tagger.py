@@ -1,6 +1,7 @@
 """文件命名与标签写入(mutagen):flac / mp3 / m4a,封面与歌词。"""
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
@@ -12,11 +13,25 @@ _ILLEGAL = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 _MULTI_SPACE = re.compile(r"\s+")
 
 
-def sanitize(name: str, maxlen: int = 120) -> str:
+def _truncate_utf8(text: str, max_bytes: int) -> str:
+    data = text.encode("utf-8")
+    if len(data) <= max_bytes:
+        return text
+    return data[:max(0, max_bytes)].decode("utf-8", "ignore").rstrip()
+
+
+def sanitize(name: str, max_bytes: int = 180) -> str:
     s = _ILLEGAL.sub(" ", str(name))
     s = _MULTI_SPACE.sub(" ", s).strip().strip(".")
-    s = s[:maxlen].strip()
-    return s or "未知"
+    s = s.strip()
+    if not s:
+        return "未知"
+    if len(s.encode("utf-8")) <= max_bytes:
+        return s
+    digest = hashlib.sha1(s.encode("utf-8")).hexdigest()[:8]
+    suffix = f" ~{digest}"
+    keep = max(1, max_bytes - len(suffix.encode("utf-8")))
+    return f"{_truncate_utf8(s, keep).rstrip(' .')}{suffix}"
 
 
 def safe_format(template: str, **vars: object) -> str:

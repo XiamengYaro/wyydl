@@ -66,19 +66,22 @@ class SyncEngine:
             self._cookie_checked_at = time.time()
         return self._cookie_ok
 
-    def try_run(self, playlist_ids: list[int] | None = None, trigger: str = "manual") -> bool:
+    def try_run(self, playlist_ids: list[int] | None = None, trigger: str = "manual",
+                song_ids: list[int] | None = None) -> bool:
         if self.running:
             return False
-        threading.Thread(target=self._guarded_run, args=(playlist_ids, trigger), daemon=True).start()
+        threading.Thread(target=self._guarded_run, args=(playlist_ids, trigger, song_ids),
+                         daemon=True).start()
         return True
 
-    def _guarded_run(self, playlist_ids, trigger) -> None:
+    def _guarded_run(self, playlist_ids, trigger, song_ids=None) -> None:
         try:
-            self.run_once(playlist_ids, trigger)
+            self.run_once(playlist_ids, trigger, song_ids)
         except Exception:
             log.exception("同步线程异常退出")
 
-    def run_once(self, playlist_ids: list[int] | None = None, trigger: str = "schedule") -> dict:
+    def run_once(self, playlist_ids: list[int] | None = None, trigger: str = "schedule",
+                 song_ids: list[int] | None = None) -> dict:
         with self._run_lock:
             if self.running:
                 return {}
@@ -92,7 +95,7 @@ class SyncEngine:
         }
         notify.notify_start(self.cfg.d)
         try:
-            self._run(summary, playlist_ids)
+            self._run(summary, playlist_ids, song_ids)
         except LoginExpired:
             summary["status"] = "login_expired"
             log.error("登录态失效,本轮终止")
@@ -109,7 +112,8 @@ class SyncEngine:
         return summary
 
     # ================= 主流程 =================
-    def _run(self, summary: dict, playlist_ids: list[int] | None) -> None:
+    def _run(self, summary: dict, playlist_ids: list[int] | None,
+             song_ids: list[int] | None = None) -> None:
         cfg = self.cfg
         if not self.api.logged_in():
             raise LoginExpired("MUSIC_U 无效或已过期")
@@ -172,6 +176,10 @@ class SyncEngine:
 
         # 2) 详情与音质权限
         all_ids = sorted({int(t["id"]) for ts in desired.values() for t in ts if t.get("id")})
+        if song_ids:
+            wanted = {int(x) for x in song_ids}
+            all_ids = [sid for sid in all_ids if sid in wanted]
+            log.info("快速重试:仅处理 %d 首失败歌曲", len(all_ids))
         self._set_progress("拉取歌曲详情", f"{len(all_ids)} 首")
         details: dict[int, dict] = {}
         for s in self.api.song_detail(all_ids):
@@ -266,6 +274,99 @@ class SyncEngine:
                     log.info("清理回收文件:%s", p.name)
             except OSError:
                 pass
+
+    def _trash_target(self, source: Path) -> Path:
+        trash = self._music_root() / "_trash"
+        trash.mkdir(parents=True, exist_ok=True)
+        stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        stem = tagger.sanitize(source.stem, max_bytes=210)
+        candidate = trash / f"{stamp}-{stem}{source.suffix.lower()}"
+        i = 2
+        while candidate.exists():
+            candidate = trash / f"{stamp}-{stem}-{i}{source.suffix.lower()}"
+            i += 1
+        return candidate
+
+    def quarantine_paths(self, paths: list[str], reason: str = "manual") -> list[dict]:
+        """把音乐目录内的文件移动到 _trash,不直接删除。"""
+        root = self._music_root().resolve()
+        moved: list[dict] = []
+        seen: set[Path] = set()
+        for raw in paths:
+            try:
+                source = Path(raw)
+                resolved = source.resolve()
+                resolved.relative_to(root)
+            except (OSError, ValueError):
+                continue
+            if resolved in seen or not source.is_file() or "_trash" in resolved.parts:
+                continue
+            seen.add(resolved)
+            destination = self._trash_target(source)
+            try:
+                downloader.shutil_move(source, destination)
+                for side_ext in (".lrc", ".nfo"):
+                    side = source.with_suffix(side_ext)
+                    if side.exists():
+                        downloader.shutil_move(side, destination.with_suffix(side_ext))
+                for row in self.state.all_songs():
+                    if row.get("file_path") and Path(row["file_path"]).resolve() == resolved:
+                        self.state.upsert_song(sid=int(row["sid"]), status="removed",
+                                               file_path=str(destination))
+                moved.append({"from": str(source), "to": str(destination), "reason": reason})
+            except OSError as e:
+                log.warning("隔离文件失败 %s: %s", source, e)
+        return moved
+
+    def clear_trash(self) -> int:
+        trash = self._music_root() / "_trash"
+        if not trash.is_dir():
+            return 0
+        count = 0
+        for p in trash.rglob("*"):
+            if p.is_file():
+                try:
+                    p.unlink()
+                    count += 1
+                except OSError:
+                    pass
+        return count
+
+    def duplicate_files(self) -> list[dict]:
+        """按同目录、同文件名主干的跨格式文件分组。"""
+        root = self._music_root()
+        groups: dict[tuple[str, str], list[Path]] = {}
+        for p in root.rglob("*"):
+            if not (p.is_file() and p.suffix.lower() in self._LOCAL_EXTS):
+                continue
+            rel = p.relative_to(root)
+            if rel.parts and rel.parts[0] == "_trash":
+                continue
+            groups.setdefault((str(p.parent).casefold(), p.stem.casefold()), []).append(p)
+        state_by_path = {
+            str(Path(s["file_path"]).resolve()): s
+            for s in self.state.all_songs()
+            if s.get("file_path") and Path(s["file_path"]).exists()
+        }
+        rank = {".flac": 0, ".m4a": 1, ".mp3": 2, ".aac": 3, ".ogg": 4, ".wav": 5, ".ape": 6}
+        out = []
+        for paths in groups.values():
+            if len(paths) < 2:
+                continue
+            items = []
+            for p in sorted(paths, key=lambda x: (rank.get(x.suffix.lower(), 99),
+                                                   -x.stat().st_size, x.name.casefold())):
+                row = state_by_path.get(str(p.resolve())) or {}
+                items.append({
+                    "path": str(p), "name": p.name, "ext": p.suffix.lstrip(".").lower(),
+                    "size": p.stat().st_size, "mtime": int(p.stat().st_mtime),
+                    "title": row.get("title") or p.stem,
+                    "artist": row.get("artist") or "",
+                    "status": row.get("status") or "local",
+                })
+            out.append({"stem": paths[0].stem, "directory": str(paths[0].parent),
+                        "files": items})
+        return sorted(out, key=lambda g: (g["directory"].casefold(), g["stem"].casefold()))
 
     def _note_fail(self, sid: int, reason: str = "") -> None:
         """整首下载失败:状态置 failed、记录原因与时间、失败计数 +1(供 24h 退避)。"""
@@ -397,6 +498,8 @@ class SyncEngine:
         info = self._album_info(detail)
         meta["genre"] = self._genre_of(info)
         meta["label"] = str(info.get("company") or "")
+        previous = self.state.song(sid) or {}
+        previous_path = Path(previous["file_path"]) if previous.get("file_path") else None
         fail = lambda reason: {"ok": False, "title": meta["title"], "artist": meta["artist"], "reason": reason}  # noqa: E731
 
         entry, stream_note = self._resolve_stream(sid, want_level)
@@ -456,9 +559,9 @@ class SyncEngine:
             warns.append(tag_warn)
 
         rel = tagger.song_relative_path(meta, self.cfg.layout, self.cfg.naming)
-        final = MUSIC_DIR / f"{rel}.{ext}"
+        final = self._music_root() / f"{rel}.{ext}"
         if final.exists():
-            final.unlink()
+            self.quarantine_paths([str(final)], reason="replace")
         downloader.move_into(real, final)
 
         if lrc and self.cfg.d["lyrics"].get("lrc", True):
@@ -471,6 +574,12 @@ class SyncEngine:
             br=int(entry.get("br") or 0), size=size, md5=md5hex,
             downloaded_at=now_str(), status="ok", fail_count=0, last_error="",
         )
+        if previous_path and previous_path.exists():
+            try:
+                if previous_path.resolve() != final.resolve():
+                    self.quarantine_paths([str(previous_path)], reason="format-upgrade")
+            except OSError:
+                pass
         if self.cfg.d.get("nfo", True):
             try:
                 self._write_nfo(final, meta, detail)

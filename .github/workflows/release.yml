@@ -71,16 +71,44 @@ jobs:
             ${{ env.IMAGE }}:${{ github.ref_name }}
             ${{ env.IMAGE }}:latest
 
+      - name: 验证 GHCR 镜像可匿名拉取
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          PACKAGE_NAME="${GITHUB_REPOSITORY#*/}/wyydl-sync"
+          TOKEN=$(curl -sSL \
+            "https://ghcr.io/token?scope=repository:${GITHUB_REPOSITORY,,}/wyydl-sync:pull" \
+            | jq -r '.token // empty')
+          if [ -z "$TOKEN" ]; then
+            echo "::error title=GHCR token unavailable::无法获取匿名 pull token"
+            exit 1
+          fi
+          CODE=$(curl -sS -o /tmp/ghcr-manifest.json -w '%{http_code}' \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+            "https://ghcr.io/v2/${GITHUB_REPOSITORY,,}/wyydl-sync/manifests/${GITHUB_REF_NAME}")
+          if [ "$CODE" != "200" ]; then
+            echo "::error title=GHCR package is private::${GITHUB_REF_NAME} 无法匿名拉取（HTTP $CODE）。请在 GitHub Package settings 中把 ${PACKAGE_NAME} 改为 Public。"
+            echo "设置地址: https://github.com/users/${GITHUB_REPOSITORY_OWNER}/packages/container/package/${PACKAGE_NAME//\//%2F}/settings"
+            cat /tmp/ghcr-manifest.json
+            exit 1
+          fi
+          echo "GHCR 匿名拉取验证通过: ${IMAGE}:${GITHUB_REF_NAME}"
+
+      - name: 打包本地构建回退版 fpk
+        run: WYYDL_BUILD_MODE=local ./fpk/build.sh
+
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: wyydl-fpk
-          path: fpk/wyydl.fpk
+          path: |
+            fpk/wyydl.fpk
+            fpk/wyydl-*-local.fpk
 
       - name: 创建 Release 并上传 fpk
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" fpk/wyydl.fpk \
+          gh release create "$GITHUB_REF_NAME" fpk/wyydl.fpk fpk/wyydl-*-local.fpk \
             --title "$GITHUB_REF_NAME" --generate-notes

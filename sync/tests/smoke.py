@@ -50,6 +50,11 @@ ok("配置漏选 standard 时仍强制兜底",
 # ---- 命名清洗 ----
 ok("非法字符", sanitize('A/B:*c?"<>|') == "A B c")
 ok("空名兜底", sanitize("   ") == "未知")
+_long_jp = "ダンスロボットダンス" * 30
+_long_safe = sanitize(_long_jp)
+ok("文件名按 UTF-8 字节截断", len(_long_safe.encode("utf-8")) <= 180
+   and " ~" in _long_safe)
+ok("超长同名标题仍可区分", sanitize(_long_jp + "A") != sanitize(_long_jp + "B"))
 p = song_relative_path({"artist": "周杰伦 / 费玉清", "album": "叶惠美", "title": "晴天",
                         "track": 3, "pos": 7, "playlist": "我的最爱"}, "archive", "{track:02d}. {title}")
 ok("archive 路径", str(p) == str(Path("周杰伦 费玉清") / "叶惠美" / "03. 晴天"))
@@ -213,6 +218,32 @@ _engMatch = SyncEngine(cfg, st, _mock_api([
 _stream3, _note3 = _engMatch._resolve_stream(1, "jymaster")
 ok("原生接口失败后显式解灰兜底", bool(_stream3) and _stream3["url"].endswith("matched.mp3"))
 
+_cfgFast = config.Config.load()
+_cfgFast.d["playlists"] = [{"id": 77, "name": "快速重试"}]
+st.upsert_playlist(77, "快速重试", 2)
+st.set_playlist_songs(77, [(9001, 0), (9002, 1)])
+_fast_file = config.MUSIC_DIR / "keep.mp3"
+_fast_file.write_bytes(b"ok")
+st.upsert_song(sid=9001, title="正常", status="ok", file_path=str(_fast_file), level="standard")
+st.upsert_song(sid=9002, title="正常二", status="ok", file_path=str(_fast_file), level="standard")
+_fast_api = _mock_api([
+    {"data": {"code": 200}},
+    {"playlist": {"name": "快速重试", "trackIds": [{"id": 9001}, {"id": 9002}]}},
+])
+_requested_details = []
+_fast_api.song_detail = lambda ids: (
+    _requested_details.extend(ids) or [{
+        "id": 9002, "name": "正常二", "ar": [{"name": "A"}],
+        "al": {"name": "B", "id": 0, "picUrl": ""}, "no": 1,
+        "privilege": {"maxBrLevel": "standard", "dlLevel": "standard"},
+    }]
+)
+_fast_eng = SyncEngine(_cfgFast, st, _fast_api)
+_fast_summary = {"status": "ok", "playlists": [], "levels": {}, "added": 0, "upgraded": 0,
+                 "failed": 0, "removed": 0, "partial": 0, "partial_failures": [], "failures": []}
+_fast_eng._run(_fast_summary, None, [9002])
+ok("快速重试只请求失败歌曲详情", _requested_details == [9002])
+
 # ---- fpk 包完整性(compose 镜像占位/无重复键/向导字段) ----
 import subprocess as _sp  # noqa: E402
 import yaml as _yaml  # noqa: E402
@@ -292,6 +323,13 @@ st.upsert_song(sid=402, title="待重试", status="failed", fail_count=3,
 _reset_count = st.reset_failed_backoff()
 ok("失败退避可清除", _reset_count >= 2 and st.song(402)["fail_count"] == 0
    and st.song(402)["downloaded_at"] == "")
+st.upsert_playlist(3, "快速重试", 2)
+st.set_playlist_songs(3, [(404, 0), (405, 1)])
+st.upsert_song(sid=404, title="失败单曲", status="failed", fail_count=3)
+st.upsert_song(sid=405, title="正常单曲", status="ok")
+ok("按歌单定位失败歌曲", st.failed_song_ids([3]) == [404])
+ok("只清除指定歌曲退避", st.reset_failed_backoff([404]) == 1
+   and st.song(404)["fail_count"] == 0)
 _engF = SyncEngine(config.Config.load(), st, _mock_api([]))
 _engF._note_fail(401, "无可用音源(试听或下架)")
 ok("失败原因持久化", st.song(401)["status"] == "failed"
@@ -350,6 +388,23 @@ ok("手动修改后不再缺失", not any(x["path"] == _newp and x["missing"] fo
 _a = _mock_api([{"result": {"songs": [{"id": 9, "name": "搜索曲", "ar": [{"name": "甲"}],
                                        "al": {"name": "辑"}, "dt": 180000}]}}])
 ok("搜索接口", _a.search("关键词")[0]["name"] == "搜索曲")
+
+# ---- 重复文件检查与回收隔离 ----
+_dup_dir = config.MUSIC_DIR / "重复测试"
+_dup_dir.mkdir(parents=True, exist_ok=True)
+_dup_mp3 = _dup_dir / "01. 同一首歌.mp3"
+_dup_flac = _dup_dir / "01. 同一首歌.flac"
+_dup_mp3.write_bytes(b"old")
+_dup_flac.write_bytes(b"new")
+_engDup = SyncEngine(config.Config.load(), st, _mock_api([]))
+_dup_groups = _engDup.duplicate_files()
+_dup_group = next((g for g in _dup_groups if g["stem"] == "01. 同一首歌"), None)
+ok("跨格式重复文件分组", _dup_group is not None and len(_dup_group["files"]) == 2
+   and _dup_group["files"][0]["ext"] == "flac")
+_moved = _engDup.quarantine_paths([str(_dup_mp3)], reason="test")
+ok("重复文件默认移入回收目录", len(_moved) == 1 and not _dup_mp3.exists()
+   and Path(_moved[0]["to"]).exists() and "_trash" in Path(_moved[0]["to"]).parts)
+ok("回收目录可人工清空", _engDup.clear_trash() >= 1)
 
 # ---- 全量信息写入(MP3 增量标签:流派/厂牌/歌曲ID/封面/歌词)----
 _mp3 = config.MUSIC_DIR / "全量信息.mp3"
@@ -423,6 +478,12 @@ ok("面板首页", r.status_code == 200 and "网易云歌单同步" in r.text)
 r = client.get("/api/tracks/1")
 ok("面板曲目列表", r.status_code == 200 and r.json()["tracks"][0]["title"] == "晴天"
    and r.json()["tracks"][0]["dup"] is True)
+r = client.get("/api/tracks/1?limit=1&offset=1")
+ok("曲目详情分页", r.status_code == 200 and r.json()["total"] == 3
+   and r.json()["offset"] == 1 and len(r.json()["tracks"]) == 1)
+r = client.get("/api/tracks/1?status=failed")
+ok("曲目详情失败筛选", r.status_code == 200 and r.json()["stats"]["failed"] == 1
+   and len(r.json()["tracks"]) == 1 and r.json()["tracks"][0]["title"] == "七里香")
 
 # ---- 结构化设置 ----
 cfg.d["playlists"] = [{"id": 999}]
@@ -454,16 +515,33 @@ ok("新配置项生效", cfg.d["lyrics"]["yrc"] is True and cfg.d["limits"]["max
    and cfg.d["limits"]["min_free_space"] == 1 and cfg.d["trash_retention_days"] == 7)
 ok("表单保存不影响歌单与 api_base", cfg.playlist_ids() == [999] and cfg.d["api_base"].startswith("http"))
 
+_dup_api_mp3 = _dup_dir / "02. API 重复.mp3"
+_dup_api_flac = _dup_dir / "02. API 重复.flac"
+_dup_api_mp3.write_bytes(b"old")
+_dup_api_flac.write_bytes(b"new")
+_clientDup = TestClient(create_app(AppContext(cfg=cfg, state=st, api=api, engine=_engDup)))
+_dup_resp = _clientDup.get("/api/local/duplicates", headers={"X-Token": "t1"})
+ok("重复文件接口", _dup_resp.status_code == 200
+   and any(g["stem"] == "02. API 重复" for g in _dup_resp.json()["groups"]))
+_q_resp = _clientDup.post("/api/local/quarantine", headers={"X-Token": "t1"},
+                          json={"paths": [str(_dup_api_mp3)]})
+ok("重复文件隔离接口", _q_resp.status_code == 200 and _q_resp.json()["moved"] == 1
+   and not _dup_api_mp3.exists())
+_clear_resp = _clientDup.post("/api/trash/clear", headers={"X-Token": "t1"})
+ok("回收目录清理接口", _clear_resp.status_code == 200 and _clear_resp.json()["deleted"] >= 1)
+
 st.upsert_song(sid=403, title="立即重试", status="failed", fail_count=3,
                downloaded_at="2026-08-29 00:00:00")
 _retry_calls = []
 _engRetry = type("E", (), {
     "running": False,
-    "try_run": lambda self, ids=None, trigger="m": (_retry_calls.append(trigger) or True),
+    "try_run": lambda self, ids=None, trigger="m", song_ids=None:
+        (_retry_calls.append((trigger, song_ids or [])) or True),
 })()
 _clientRetry = TestClient(create_app(AppContext(cfg=cfg, state=st, api=api, engine=_engRetry)))
 _rr = _clientRetry.post("/api/retry-failed", headers={"X-Token": "t1"})
 ok("面板可立即重试失败歌曲", _rr.status_code == 200 and _rr.json()["reset"] >= 1
-   and _retry_calls == ["retry"] and st.song(403)["fail_count"] == 0)
+   and _retry_calls and _retry_calls[0][0] == "retry" and 403 in _retry_calls[0][1]
+   and st.song(403)["fail_count"] == 0)
 
 print(f"\n全部 {passed} 项通过 ✅")

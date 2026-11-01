@@ -113,6 +113,15 @@ scp ncm-api.tar 用户名@NAS_IP:/tmp/ && ssh 用户名@NAS_IP "sudo docker load
 
 加速地址失效率较高,方案 A 不行就换地址或用方案 B。若连 `nslookup registry-1.docker.io` 都失败,检查 NAS 的 DNS 设置(可改 223.5.5.5)。
 
+**GHCR 镜像报 `manifest unknown` 或 `denied`**
+
+GHCR 新包默认私有。第一次发布镜像后,需要到包的 **Package settings → Danger Zone →
+Change visibility** 将包改为 **Public**。之后的 tag 会继承包级可见性。
+
+Release CI 会匿名请求刚推送的 manifest;若包仍为私有,工作流会失败并输出设置地址,
+避免发布一个无法拉取的 fpk。Release 页面同时提供 `*-local.fpk`,可在 GHCR 不可用时
+直接从包内源码构建。
+
 ## 备注
 
 - `platform=all`:包内不含预编译二进制,Docker 构建按设备架构自适应(x86_64/arm64 均可)。

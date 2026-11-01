@@ -147,12 +147,34 @@ class State:
             tuple(row[f] for f in _SONG_FIELDS),
         )
 
-    def reset_failed_backoff(self) -> int:
+    def failed_song_ids(self, playlist_ids: list[int] | None = None) -> list[int]:
+        """返回失败歌曲 ID;可按歌单/特殊来源限定。"""
+        if playlist_ids:
+            marks = ",".join("?" for _ in playlist_ids)
+            cur = self._exec(
+                f"SELECT DISTINCT ps.sid FROM playlist_songs ps "
+                f"JOIN songs s ON s.sid=ps.sid "
+                f"WHERE ps.pid IN ({marks}) AND (s.status='failed' OR s.status LIKE 'failed:%')",
+                tuple(int(x) for x in playlist_ids),
+            )
+        else:
+            cur = self._exec(
+                "SELECT sid FROM songs WHERE status='failed' OR status LIKE 'failed:%'"
+            )
+        return [int(r[0]) for r in cur.fetchall()]
+
+    def reset_failed_backoff(self, song_ids: list[int] | None = None) -> int:
         """清除失败歌曲的 24h 退避,让用户可立即验证修复后的取流逻辑。"""
-        cur = self._exec(
-            "UPDATE songs SET fail_count=0,downloaded_at='' "
-            "WHERE status='failed' OR status LIKE 'failed:%'"
-        )
+        if song_ids is not None and not song_ids:
+            return 0
+        sql = "UPDATE songs SET fail_count=0,downloaded_at='' " \
+              "WHERE (status='failed' OR status LIKE 'failed:%')"
+        params: tuple = ()
+        if song_ids:
+            marks = ",".join("?" for _ in song_ids)
+            sql += f" AND sid IN ({marks})"
+            params = tuple(int(x) for x in song_ids)
+        cur = self._exec(sql, params)
         return int(cur.rowcount or 0)
 
     # ---- runs ----

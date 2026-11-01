@@ -1,0 +1,1238 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>wyydl · 网易云歌单同步</title>
+<style>
+  :root{
+    --bg:#0d1210;--sidebar:#101613;--surface:#151c18;--surface-2:#1a231e;--surface-3:#202b25;
+    --line:#2a3630;--line-strong:#3b4a43;--text:#f2f6f3;--text-2:#c7d2cc;--muted:#8f9e97;
+    --accent:#e45f4d;--accent-2:#ff7a67;--teal:#4cc7a6;--amber:#e6b24a;--danger:#ef7468;--blue:#72a5dc;
+    --radius:8px;--shadow:0 16px 40px rgb(0 0 0 / .22);
+    --ease:cubic-bezier(.22,.61,.36,1);
+    --font:"Avenir Next","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 var(--font);
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  button,input,select,textarea{font:inherit}
+  button,a,summary{cursor:pointer}
+  a{color:inherit;text-decoration:none}
+  button{border:0;background:none;color:inherit}
+  :focus-visible{outline:2px solid #9fd8ff;outline-offset:2px}
+  .icon{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;
+    stroke-linecap:round;stroke-linejoin:round}
+  .icon-sm{width:16px;height:16px}
+  .svg-sprite{position:absolute;width:0;height:0;overflow:hidden}
+
+  .app-shell{min-height:100vh;display:grid;grid-template-columns:232px minmax(0,1fr)}
+  .sidebar{position:sticky;top:0;height:100vh;background:var(--sidebar);border-right:1px solid var(--line);
+    padding:22px 14px 18px;display:flex;flex-direction:column;z-index:30}
+  .brand{display:flex;align-items:center;gap:11px;padding:0 8px 24px;min-width:0}
+  .brand-mark{width:34px;height:34px;border-radius:8px;background:var(--accent);position:relative;flex:none}
+  .brand-mark::before{content:"";position:absolute;left:9px;top:9px;width:4px;height:14px;border-radius:3px;background:#fff}
+  .brand-mark::after{content:"";position:absolute;left:14px;top:9px;width:10px;height:4px;border-radius:3px;background:#fff;
+    box-shadow:0 10px 0 #fff}
+  .brand-title{font-weight:750;letter-spacing:.01em;white-space:nowrap}
+  .brand-sub{font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+  .side-nav{display:grid;gap:5px}
+  .nav-btn{display:grid;grid-template-columns:22px 1fr auto;align-items:center;gap:10px;min-height:44px;
+    border-radius:7px;padding:8px 10px;color:var(--muted);text-align:left;transition:background .16s var(--ease),color .16s var(--ease)}
+  .nav-btn:hover{background:var(--surface);color:var(--text)}
+  .nav-btn.active{background:var(--surface-2);color:var(--text);box-shadow:inset 3px 0 0 var(--accent)}
+  .nav-btn .nav-count{font:11px/1 "SFMono-Regular",Menlo,monospace;color:var(--muted)}
+  .side-footer{margin-top:auto;display:grid;gap:10px}
+  .side-status{border:1px solid var(--line);background:var(--surface);border-radius:var(--radius);padding:12px}
+  .side-status-row{display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:4px 0}
+  .side-status-row span{color:var(--muted)}
+  .side-status-row b{text-align:right;font-weight:600}
+  .side-version{font:10px/1.2 "SFMono-Regular",Menlo,monospace;color:var(--muted);padding:0 8px}
+  .app-main{min-width:0;display:flex;flex-direction:column}
+
+  .topbar{position:sticky;top:0;z-index:20;min-height:74px;display:flex;align-items:center;gap:18px;
+    padding:12px 28px;background:rgb(13 18 16 / .92);border-bottom:1px solid var(--line);
+    -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+  .page-title{min-width:0;margin-right:auto}
+  .page-title h1{font-size:20px;line-height:1.2;margin:0;font-weight:700}
+  .page-title p{font-size:12px;color:var(--muted);margin:5px 0 0}
+  .top-actions{display:flex;align-items:center;gap:8px;flex:none}
+  .conn-chip{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 11px;border:1px solid var(--line);
+    border-radius:999px;color:var(--muted);font-size:12px;white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+  .dot.ok{background:var(--teal)}.dot.bad{background:var(--danger)}.dot.run{background:var(--amber)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:0 13px;
+    border:1px solid var(--line-strong);border-radius:7px;color:var(--text);background:var(--surface-2);font-weight:600;font-size:13px;
+    transition:background .16s var(--ease),border-color .16s var(--ease),opacity .16s var(--ease)}
+  .btn:hover{background:var(--surface-3);border-color:#56675f}
+  .btn:active{opacity:.82}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:var(--accent-2);border-color:var(--accent-2)}
+  .btn.ghost{background:transparent}
+  .btn.small{min-height:34px;padding:0 10px;font-size:12px}
+  .icon-btn{width:38px;height:38px;padding:0;border:1px solid var(--line);border-radius:7px;display:inline-flex;
+    align-items:center;justify-content:center;color:var(--muted);background:transparent}
+  .icon-btn:hover{color:var(--text);background:var(--surface-2)}
+  .link-btn{color:var(--text);font-weight:650;text-align:left;padding:0}
+  .link-btn:hover{color:var(--accent-2);text-decoration:underline}
+  .conn-banner{margin:14px 28px 0;padding:11px 14px;border:1px solid rgb(239 116 104 / .42);border-radius:7px;
+    background:rgb(239 116 104 / .11);color:#ffd0cc;font-size:13px}
+
+  .content{padding:24px 28px 48px;width:100%;max-width:1440px;margin:0 auto;min-width:0}
+  .view{display:grid;gap:18px;min-width:0}
+  .view-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .view-head h2{font-size:17px;margin:0}
+  .view-head p{color:var(--muted);margin:5px 0 0;font-size:12px;max-width:65ch}
+  .view-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .surface{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);min-width:0}
+  .surface-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;
+    border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .surface-head h3{margin:0;font-size:13px;font-weight:700;color:var(--text-2)}
+  .surface-head .meta{color:var(--muted);font-size:12px}
+  .surface-body{padding:16px}
+  .hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(300px,.75fr);gap:24px;
+    background:#111815;border:1px solid var(--line);border-radius:var(--radius);padding:24px}
+  .eyebrow{font:10px/1.2 "SFMono-Regular",Menlo,monospace;color:var(--accent-2);letter-spacing:.12em;text-transform:uppercase}
+  .hero h2{font-size:28px;line-height:1.18;margin:10px 0 8px;max-width:25ch}
+  .hero p{margin:0;color:var(--muted);max-width:62ch}
+  .hero-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}
+  .hero-side{align-self:stretch;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:center}
+  .hero-stat{padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:7px}
+  .hero-stat span{display:block;color:var(--muted);font-size:11px}
+  .hero-stat b{display:block;font:17px/1.3 "SFMono-Regular",Menlo,monospace;margin-top:4px}
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+  .kpi-label{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px}
+  .kpi-value{font:28px/1 "SFMono-Regular",Menlo,monospace;font-weight:600;margin-top:11px;font-variant-numeric:tabular-nums}
+  .kpi-note{font-size:11px;color:var(--muted);margin-top:7px}
+  .dashboard-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,.85fr);gap:18px;align-items:start}
+  .list{display:grid}
+  .row-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;
+    padding:13px 16px;border-bottom:1px solid var(--line)}
+  .row-item:last-child{border-bottom:0}
+  .row-title{font-weight:650;min-width:0;overflow-wrap:anywhere}
+  .row-sub{font-size:12px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}
+  .row-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+  .empty{padding:28px 16px;text-align:center;color:var(--muted);font-size:13px}
+  .tag{display:inline-flex;align-items:center;gap:5px;min-height:23px;padding:0 8px;border-radius:999px;
+    border:1px solid var(--line-strong);color:var(--text-2);font-size:11px;white-space:nowrap;background:transparent}
+  .tag.ok{border-color:rgb(76 199 166 / .38);background:rgb(76 199 166 / .10);color:#85e2c9}
+  .tag.bad{border-color:rgb(239 116 104 / .42);background:rgb(239 116 104 / .10);color:#ffaaa2}
+  .tag.warn{border-color:rgb(230 178 74 / .38);background:rgb(230 178 74 / .10);color:#f0cf87}
+  .tag.info{border-color:rgb(114 165 220 / .38);background:rgb(114 165 220 / .10);color:#a8c8ed}
+  .stat-strip{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line)}
+  .stat-strip div{padding:12px 16px;border-right:1px solid var(--line)}
+  .stat-strip div:last-child{border-right:0}
+  .stat-strip span{display:block;color:var(--muted);font-size:11px}
+  .stat-strip b{display:block;margin-top:5px;font:16px/1 "SFMono-Regular",Menlo,monospace}
+  .progress-wrap{padding:16px}
+  .progress-line{display:flex;justify-content:space-between;gap:12px;font-size:12px;margin-bottom:9px}
+  .bar{height:7px;border-radius:999px;background:var(--surface-3);overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:var(--teal);border-radius:inherit;transition:width .35s var(--ease)}
+  .active-list{display:grid;gap:8px;margin-top:13px}
+  .active-item{padding:10px 12px;background:var(--surface-2);border:1px solid var(--line);border-radius:6px}
+  .active-head{display:flex;justify-content:space-between;gap:10px;font-size:12px}
+  .active-head span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .active-item .bar{height:4px;margin-top:8px}
+  .log-box{font:12px/1.65 "SFMono-Regular",Menlo,Consolas,monospace;background:#0b100e;color:#c4d0c9;
+    padding:13px 15px;max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border-radius:0 0 8px 8px}
+  details.log-surface{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  details.log-surface summary{list-style:none;display:flex;align-items:center;justify-content:space-between;
+    min-height:48px;padding:0 16px;font-weight:650;font-size:13px;color:var(--text-2)}
+  details.log-surface summary::-webkit-details-marker{display:none}
+  details.log-surface summary::after{content:"+";font:18px/1 "SFMono-Regular",Menlo,monospace;color:var(--muted)}
+  details.log-surface[open] summary::after{content:"−"}
+
+  .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .field{display:grid;gap:6px;min-width:0;color:var(--muted);font-size:12px}
+  .field span{display:block}
+  input[type=text],input[type=number],input[type=password],select,textarea{width:100%;min-height:40px;padding:8px 11px;
+    color:var(--text);background:#0d1411;border:1px solid var(--line-strong);border-radius:6px;font-size:13px}
+  input:hover,select:hover,textarea:hover{border-color:#58685f}
+  input::placeholder,textarea::placeholder{color:#75837c}
+  textarea{resize:vertical}
+  input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}
+  .search{position:relative;min-width:220px;flex:1}
+  .search .icon{position:absolute;left:11px;top:11px;color:var(--muted);pointer-events:none}
+  .search input{padding-left:36px}
+  .check-label{display:inline-flex;align-items:center;gap:7px;min-height:38px;color:var(--text-2);font-size:12px;white-space:nowrap}
+  .table-wrap{overflow:auto;max-width:100%}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+  th{color:var(--muted);font-size:11px;font-weight:600;white-space:nowrap;background:var(--surface-2)}
+  tr:last-child td{border-bottom:0}
+  td{font-variant-numeric:tabular-nums}
+  .playlist-list{display:grid}
+  .playlist-row{display:grid;grid-template-columns:minmax(0,1.4fr) repeat(3,minmax(64px,.25fr)) minmax(120px,.5fr) auto;
+    gap:12px;align-items:center;padding:13px 16px;border-bottom:1px solid var(--line)}
+  .playlist-row:last-child{border-bottom:0}
+  .playlist-row.header{padding-top:9px;padding-bottom:9px;color:var(--muted);font-size:11px;background:var(--surface-2)}
+  .playlist-name{font-weight:650;overflow-wrap:anywhere}
+  .playlist-time{font-size:12px;color:var(--muted)}
+  .mini-stat{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  .mini-stat b{font:13px/1 "SFMono-Regular",Menlo,monospace;color:var(--text)}
+  .add-panel{display:grid;grid-template-columns:minmax(220px,1fr) minmax(160px,.55fr) auto auto;gap:8px}
+  .source-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .source-row select{max-width:180px}
+
+  .local-row{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(130px,.55fr) minmax(130px,.55fr) auto;
+    gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .local-row:last-child{border-bottom:0}
+  .local-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px}
+  .action-menu{position:relative}
+  .action-menu summary{list-style:none;width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--line);border-radius:6px;color:var(--muted)}
+  .action-menu summary::-webkit-details-marker{display:none}
+  .menu-pop{position:absolute;right:0;top:39px;z-index:10;min-width:132px;background:var(--surface-3);
+    border:1px solid var(--line-strong);border-radius:7px;box-shadow:var(--shadow);padding:5px}
+  .menu-pop button{display:flex;width:100%;padding:8px 9px;border-radius:5px;text-align:left;font-size:12px}
+  .menu-pop button:hover{background:var(--surface)}
+  .pager{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-top:1px solid var(--line)}
+  .pager-info{font-size:12px;color:var(--muted)}
+
+  .settings-shell{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start}
+  .settings-nav{position:sticky;top:98px;display:grid;gap:4px}
+  .settings-nav button{text-align:left;min-height:38px;border-radius:6px;padding:0 11px;color:var(--muted);font-size:12px}
+  .settings-nav button:hover{background:var(--surface);color:var(--text)}
+  .settings-nav button.active{background:var(--surface-2);color:var(--text);box-shadow:inset 2px 0 0 var(--accent)}
+  .settings-panel{display:grid;gap:16px}
+  .settings-group{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .settings-group>h3{font-size:15px;margin:0 0 5px}
+  .settings-group>p{color:var(--muted);font-size:12px;margin:0 0 16px}
+  .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+  .form-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .hint{font-size:11px;color:var(--muted);line-height:1.45}
+  .checks{display:flex;flex-wrap:wrap;gap:10px 18px}
+  .checks label{display:inline-flex;align-items:center;gap:7px;min-height:36px;font-size:12px;color:var(--text-2)}
+  .save-bar{position:sticky;bottom:18px;z-index:12;display:flex;align-items:center;gap:12px;
+    padding:12px 14px;background:rgb(21 28 24 / .96);border:1px solid var(--line-strong);border-radius:8px;
+    box-shadow:var(--shadow);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+  .save-state{display:flex;align-items:center;gap:7px;margin-right:auto;color:var(--muted);font-size:12px}
+  .save-state.dirty{color:#f0cf87}
+  .editor{min-height:360px;font:12px/1.6 "SFMono-Regular",Menlo,Consolas,monospace;white-space:pre}
+
+  .mobile-nav{display:none}
+  dialog{width:min(720px,calc(100vw - 28px));max-height:calc(100dvh - 28px);padding:0;color:var(--text);
+    background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;box-shadow:0 28px 80px rgb(0 0 0 / .62)}
+  dialog.wide{width:min(1040px,calc(100vw - 28px))}
+  dialog::backdrop{background:rgb(3 6 5 / .72);backdrop-filter:blur(4px)}
+  .modal{display:flex;flex-direction:column;max-height:calc(100dvh - 28px)}
+  .modal-head{display:flex;align-items:center;gap:12px;padding:15px 18px;border-bottom:1px solid var(--line)}
+  .modal-head h2{font-size:17px;margin:0;min-width:0;overflow-wrap:anywhere}
+  .modal-head .icon-btn{margin-left:auto}
+  .modal-body{min-height:0;overflow:auto;padding:18px}
+  .modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:13px 18px;border-top:1px solid var(--line)}
+  .qr-img{display:block;width:220px;height:220px;max-width:100%;margin:14px auto;background:#fff;border-radius:8px;padding:8px}
+  .track-filters{display:grid;grid-template-columns:minmax(200px,1fr) 150px auto;gap:8px;margin-bottom:12px}
+  .track-stats{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+  .reason{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+  .toast-box{position:fixed;right:18px;bottom:22px;z-index:80;display:grid;gap:8px;max-width:360px}
+  .toast{padding:11px 13px;background:var(--surface-3);border:1px solid var(--line-strong);border-left:3px solid var(--blue);
+    border-radius:7px;box-shadow:var(--shadow);font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+  .toast.ok{border-left-color:var(--teal)}.toast.err{border-left-color:var(--danger)}.toast.warn{border-left-color:var(--amber)}
+
+  @media(max-width:1080px){
+    .app-shell{grid-template-columns:206px minmax(0,1fr)}
+    .dashboard-grid{grid-template-columns:1fr}
+    .playlist-row{grid-template-columns:minmax(0,1fr) repeat(3,70px) auto}
+    .playlist-row .playlist-time{display:none}
+    .settings-shell{grid-template-columns:1fr}
+    .settings-nav{position:static;display:flex;overflow-x:auto}
+    .settings-nav button{white-space:nowrap;box-shadow:none!important}
+  }
+  @media(max-width:760px){
+    .app-shell{display:block}
+    .sidebar{display:none}
+    .topbar{min-height:62px;padding:9px 14px;gap:8px}
+    .page-title h1{font-size:17px}.page-title p{display:none}
+    .conn-chip{width:42px;height:42px;min-height:42px;padding:0;justify-content:center}
+    .conn-chip #topConnection{display:none}
+    .top-actions .btn span{display:none}
+    .top-actions .btn{width:44px;height:44px;min-height:44px;padding:0}
+    .conn-chip{width:44px;height:44px;min-height:44px}
+    .content{padding:14px 14px calc(92px + env(safe-area-inset-bottom))}
+    .conn-banner{margin:10px 14px 0}
+    .view{gap:14px}
+    .hero{grid-template-columns:1fr;padding:18px;gap:16px}
+    .hero h2{font-size:22px}
+    .hero-side{grid-template-columns:1fr 1fr}
+    .kpi-grid{grid-template-columns:1fr 1fr}
+    .kpi{padding:13px}.kpi-value{font-size:23px}
+    .dashboard-grid{gap:14px}
+    .playlist-row{grid-template-columns:1fr auto;gap:7px 12px;padding:13px 14px}
+    .playlist-row.header{display:none}
+    .playlist-row .mini-stat{display:none}
+    .playlist-row .playlist-time{display:block;grid-column:1}
+    .playlist-row .row-actions{grid-row:1/span 3;grid-column:2;align-self:center}
+    .add-panel{grid-template-columns:1fr 1fr}
+    .add-panel input:first-child{grid-column:1/-1}
+    .add-panel .btn{width:100%}
+    .local-row{grid-template-columns:1fr auto;gap:7px 12px;padding:12px 14px}
+    .local-row .local-artist,.local-row .local-album{grid-column:1}
+    .local-actions{grid-column:2;grid-row:1/span 4;align-self:center}
+    .local-row .tag{width:max-content}
+    .form-grid,.form-grid.three{grid-template-columns:1fr}
+    .settings-group{padding:15px}
+    .save-bar{bottom:calc(76px + env(safe-area-inset-bottom));padding:10px}
+    .save-bar .btn span{display:none}
+    .track-filters{grid-template-columns:1fr 120px}
+    .track-filters .btn{grid-column:1/-1}
+    .table-wrap.mobile-cards table,.table-wrap.mobile-cards tbody,.table-wrap.mobile-cards tr,.table-wrap.mobile-cards td{display:block}
+    .table-wrap.mobile-cards thead{display:none}
+    .table-wrap.mobile-cards tr{padding:11px 0;border-bottom:1px solid var(--line)}
+    .table-wrap.mobile-cards td{display:grid;grid-template-columns:72px 1fr;gap:10px;border:0;padding:4px 0}
+    .table-wrap.mobile-cards td::before{content:attr(data-label);color:var(--muted);font-size:11px}
+    .table-wrap.mobile-cards td[colspan]{display:block}
+    dialog{width:calc(100vw - 16px);max-height:calc(100dvh - 16px);margin:auto}
+    dialog.wide{width:calc(100vw - 16px)}
+    .modal{max-height:calc(100dvh - 16px)}
+    .modal-body{padding:14px}
+    .toast-box{left:12px;right:12px;bottom:calc(82px + env(safe-area-inset-bottom));max-width:none}
+    .mobile-nav{display:grid;grid-template-columns:repeat(4,1fr);position:fixed;left:0;right:0;bottom:0;z-index:50;
+      min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 8px env(safe-area-inset-bottom);
+      background:rgb(15 21 18 / .97);border-top:1px solid var(--line);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+    .mobile-nav .nav-btn{grid-template-columns:1fr;justify-items:center;gap:3px;min-height:50px;padding:5px;color:var(--muted);font-size:10px}
+    .mobile-nav .nav-btn .nav-count{display:none}
+    .mobile-nav .nav-btn.active{background:transparent;box-shadow:none;color:var(--text)}
+    .mobile-nav .nav-btn .icon{width:21px;height:21px}
+    input[type=text],input[type=number],input[type=password],select{min-height:44px}
+    .btn,.icon-btn,.nav-btn,.action-menu summary,.checks label,.settings-nav button{min-height:44px}
+  }
+  @media(prefers-reduced-motion:reduce){
+    *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.001ms!important;transition-duration:.001ms!important}
+  }
+  @media(forced-colors:active){
+    .surface,.hero,.kpi,.btn,.icon-btn,dialog,.toast,.save-bar{border:1px solid CanvasText}
+  }
+</style>
+</head>
+<body>
+<svg class="svg-sprite" aria-hidden="true">
+  <symbol id="i-overview" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V21H3z"/><path d="M9 21v-7h6v7"/></symbol>
+  <symbol id="i-playlist" viewBox="0 0 24 24"><path d="M4 6h11"/><path d="M4 10h11"/><path d="M4 14h7"/><path d="M18 9v9"/><circle cx="16" cy="18" r="2"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 5v14"/><path d="M8 5v14"/><path d="m13 5 6 14"/><path d="m17 4 4 15"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.09a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15 1.7 1.7 0 0 0 3 14H3v-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V3h4v.09A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9 1.7 1.7 0 0 0 21 10h.09v4H21a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
+  <symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 6v5h-5"/><path d="M4 18v-5h5"/><path d="M18.5 9a7 7 0 0 0-12-2L4 11"/><path d="M5.5 15a7 7 0 0 0 12 2l2.5-4"/></symbol>
+  <symbol id="i-login" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 6v5h-5"/><path d="M4 18v-5h5"/><path d="M18.5 9A7 7 0 0 0 6 7L4 11"/><path d="M5.5 15A7 7 0 0 0 18 17l2-4"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 17h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></symbol>
+  <symbol id="i-disk" viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M7 9h10M7 13h6"/><circle cx="17" cy="16" r="1"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l2-7 4 14 2-7h6"/></symbol>
+</svg>
+
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div><div class="brand-title">wyydl</div><div class="brand-sub">NetEase Sync</div></div>
+    </div>
+    <nav class="side-nav" aria-label="主导航">
+      <button class="nav-btn active" data-route="overview"><svg class="icon"><use href="#i-overview"/></svg><span>总览</span></button>
+      <button class="nav-btn" data-route="playlists"><svg class="icon"><use href="#i-playlist"/></svg><span>歌单</span><span class="nav-count" id="navPlaylistCount"></span></button>
+      <button class="nav-btn" data-route="library"><svg class="icon"><use href="#i-library"/></svg><span>音乐库</span><span class="nav-count" id="navLibraryCount"></span></button>
+      <button class="nav-btn" data-route="settings"><svg class="icon"><use href="#i-settings"/></svg><span>设置</span></button>
+    </nav>
+    <div class="side-footer">
+      <div class="side-status">
+        <div class="side-status-row"><span>登录态</span><b id="sideLogin">检测中</b></div>
+        <div class="side-status-row"><span>下次运行</span><b id="sideNextRun">-</b></div>
+        <div class="side-status-row"><span>磁盘可用</span><b id="sideDisk">-</b></div>
+      </div>
+      <div class="side-version"><span id="sideVersion">wyydl</span></div>
+    </div>
+  </aside>
+
+  <div class="app-main">
+    <header class="topbar">
+      <div class="page-title"><h1 id="pageTitle">总览</h1><p id="pageSubtitle">同步状态、最近运行和需要处理的问题</p></div>
+      <div class="top-actions">
+        <span class="conn-chip"><span class="dot" id="topDot"></span><span id="topConnection">正在连接</span></span>
+        <button class="btn primary" id="btnGlobalSync" aria-label="立即同步"><svg class="icon icon-sm"><use href="#i-sync"/></svg><span>立即同步</span></button>
+        <button class="btn" id="btnGlobalLogin" aria-label="扫码登录"><svg class="icon icon-sm"><use href="#i-login"/></svg><span>扫码登录</span></button>
+      </div>
+    </header>
+    <div class="conn-banner" id="connBanner" role="alert" hidden></div>
+
+    <main class="content">
+      <section class="view" id="view-overview">
+        <section class="hero" aria-labelledby="heroTitle">
+          <div>
+            <div class="eyebrow">System health</div>
+            <h2 id="heroTitle">正在读取同步状态</h2>
+            <p id="heroCopy">稍候，面板正在连接后台服务。</p>
+            <div class="hero-actions">
+              <button class="btn primary" id="btnHeroSync"><svg class="icon icon-sm"><use href="#i-sync"/></svg>立即同步</button>
+              <button class="btn" id="btnRetryFailed" hidden>重试失败</button>
+              <button class="btn ghost" id="btnLoginExpired" hidden><svg class="icon icon-sm"><use href="#i-login"/></svg>重新登录</button>
+            </div>
+          </div>
+          <div class="hero-side">
+            <div class="hero-stat"><span>下次计划</span><b id="heroNextRun">-</b></div>
+            <div class="hero-stat"><span>当前方案</span><b id="heroSchedule">-</b></div>
+            <div class="hero-stat"><span>下载布局</span><b id="heroLayout">-</b></div>
+            <div class="hero-stat"><span>磁盘余量</span><b id="heroDisk">-</b></div>
+          </div>
+        </section>
+
+        <div class="kpi-grid">
+          <article class="kpi"><div class="kpi-label"><svg class="icon icon-sm"><use href="#i-playlist"/></svg>总曲目</div><div class="kpi-value" id="kpiTotal">-</div><div class="kpi-note">当前配置来源</div></article>
+          <article class="kpi"><div class="kpi-label"><svg class="icon icon-sm"><use href="#i-check"/></svg>已入库</div><div class="kpi-value" id="kpiOk">-</div><div class="kpi-note">可被媒体库扫描</div></article>
+          <article class="kpi"><div class="kpi-label"><svg class="icon icon-sm"><use href="#i-activity"/></svg>等待处理</div><div class="kpi-value" id="kpiPending">-</div><div class="kpi-note">下一轮或手动同步</div></article>
+          <article class="kpi"><div class="kpi-label"><svg class="icon icon-sm"><use href="#i-alert"/></svg>失败</div><div class="kpi-value" id="kpiFailed">-</div><div class="kpi-note">可进入失败中心重试</div></article>
+        </div>
+
+        <div class="dashboard-grid">
+          <section class="surface">
+            <div class="surface-head"><h3>当前任务</h3><span class="meta" id="progressMeta">空闲</span></div>
+            <div class="progress-wrap">
+              <div class="progress-line"><b id="progressStage">没有正在运行的同步任务</b><span id="progressDetail">-</span></div>
+              <div class="bar"><i id="progressBar"></i></div>
+              <div class="active-list" id="activeList"></div>
+              <div class="active-list" id="recentList"></div>
+            </div>
+          </section>
+          <section class="surface">
+            <div class="surface-head"><h3>最近运行</h3><span class="meta" id="lastRunMeta">-</span></div>
+            <div class="list" id="runList"></div>
+          </section>
+        </div>
+
+        <div class="dashboard-grid">
+          <section class="surface">
+            <div class="surface-head"><h3>失败中心</h3><span class="meta" id="failureMeta">0 个来源</span></div>
+            <div class="list" id="failureList"></div>
+          </section>
+          <section class="surface">
+            <div class="surface-head"><h3>服务状态</h3><span class="meta" id="serviceMeta">-</span></div>
+            <div class="stat-strip">
+              <div><span>登录态</span><b id="statLogin">-</b></div>
+              <div><span>定时计划</span><b id="statSchedule">-</b></div>
+              <div><span>磁盘</span><b id="statDisk">-</b></div>
+              <div><span>版本</span><b id="statVersion">-</b></div>
+            </div>
+          </section>
+        </div>
+
+        <details class="log-surface" id="logDetails">
+          <summary><span>运行日志</span><button class="btn small" id="btnLogRefresh" type="button">刷新</button></summary>
+          <div class="log-box" id="logBox">展开后加载</div>
+        </details>
+      </section>
+
+      <section class="view" id="view-playlists" hidden>
+        <div class="view-head">
+          <div><h2>歌单</h2><p>管理网易云歌单、云盘、每日推荐和私人 FM。曲目详情按页加载。</p></div>
+          <div class="view-actions">
+            <button class="btn" id="btnAccountPlaylists"><svg class="icon icon-sm"><use href="#i-library"/></svg>账号歌单</button>
+          </div>
+        </div>
+        <section class="surface">
+          <div class="surface-head"><h3>添加来源</h3><span class="meta" id="playlistDisk">-</span></div>
+          <div class="surface-body">
+            <div class="add-panel">
+              <input type="text" id="plId" inputmode="numeric" placeholder="歌单 ID 或网页版歌单链接">
+              <input type="text" id="plName" placeholder="自定义名称（可空）">
+              <button class="btn primary" id="btnAddPlaylist"><svg class="icon icon-sm"><use href="#i-plus"/></svg>添加</button>
+              <button class="btn" id="btnAddSource"><svg class="icon icon-sm"><use href="#i-plus"/></svg>添加特殊源</button>
+            </div>
+            <div class="source-row">
+              <select id="sourceSelect" aria-label="特殊来源">
+                <option value="cloud">云盘</option>
+                <option value="daily">每日推荐</option>
+                <option value="fm">私人 FM</option>
+              </select>
+              <span class="hint">账号歌单可直接读取当前登录账号的全部歌单。</span>
+            </div>
+          </div>
+        </section>
+        <section class="surface">
+          <div class="surface-head"><h3>已配置来源</h3><span class="meta" id="playlistSummary">-</span></div>
+          <div class="playlist-list" id="playlistList"></div>
+        </section>
+      </section>
+
+      <section class="view" id="view-library" hidden>
+        <div class="view-head">
+          <div><h2>音乐库</h2><p>搜索、核对和补全音乐目录中的文件。列表默认只渲染首批结果。</p></div>
+          <div class="view-actions">
+            <button class="btn" id="btnDuplicates"><svg class="icon icon-sm"><use href="#i-library"/></svg>检查重复</button>
+            <button class="btn ghost" id="btnClearTrash">清空回收目录</button>
+            <button class="btn" id="btnLocalRefresh"><svg class="icon icon-sm"><use href="#i-refresh"/></svg>刷新列表</button>
+          </div>
+        </div>
+        <section class="surface">
+          <div class="surface-head">
+            <h3>本地文件</h3>
+            <div class="toolbar">
+              <label class="search"><svg class="icon icon-sm"><use href="#i-search"/></svg><input type="text" id="localSearch" placeholder="搜索标题、歌手、专辑或文件名"></label>
+              <label class="check-label"><input type="checkbox" id="onlyMissing">仅显示缺失</label>
+            </div>
+          </div>
+          <div id="localList"></div>
+          <div class="pager"><span class="pager-info" id="localPagerInfo">未加载</span><button class="btn small" id="btnLocalMore" hidden>加载更多</button></div>
+        </section>
+      </section>
+
+      <section class="view" id="view-settings" hidden>
+        <div class="view-head">
+          <div><h2>设置</h2><p>配置按任务分组；修改后统一保存，高级 YAML 单独确认。</p></div>
+        </div>
+        <div class="settings-shell">
+          <nav class="settings-nav" aria-label="设置分组">
+            <button class="active" data-setting-group="sync">同步与文件</button>
+            <button data-setting-group="quality">音质</button>
+            <button data-setting-group="lyrics">歌词与 NFO</button>
+            <button data-setting-group="notify">通知</button>
+            <button data-setting-group="performance">性能与面板</button>
+            <button data-setting-group="advanced">高级 YAML</button>
+          </nav>
+          <form class="settings-panel" id="settingsForm">
+            <section class="settings-group" data-settings-panel="sync">
+              <h3>同步与文件</h3><p>控制计划、命名和本地整理方式。</p>
+              <div class="form-grid">
+                <label class="field"><span>运行计划（cron，5 段）</span><input type="text" id="sSchedule" placeholder="0 4 * * *"><span class="hint">每天 04:00 对应 0 4 * * *</span></label>
+                <label class="field"><span>下载文件布局</span><select id="sLayout"><option value="album">按专辑分类</option><option value="artist">按歌手分类</option><option value="flat">歌曲平铺</option><option value="playlist">按歌单分文件夹</option></select></label>
+                <label class="field"><span>命名模板</span><input type="text" id="sNaming" placeholder="{track:02d}. {title}"><span class="hint">可用变量：{track} {pos} {title} {artist} {album}</span></label>
+                <label class="field"><span>歌单移除歌曲时</span><select id="sMirror"><option value="false">保留本地文件</option><option value="true">移入 _trash 回收目录</option></select></label>
+                <label class="field"><span>回收目录保留天数</span><input type="number" id="sTrashDays" min="0" placeholder="30"></label>
+              </div>
+            </section>
+            <section class="settings-group" data-settings-panel="quality" hidden>
+              <h3>音质</h3><p>勾选的档位参与降档，standard 会作为最终兜底自动保留。</p>
+              <div class="checks" id="sChain"></div>
+              <div class="checks" style="margin-top:10px"><label><input type="checkbox" id="sUpgrade">发现更高音质时自动重新下载</label></div>
+            </section>
+            <section class="settings-group" data-settings-panel="lyrics" hidden>
+              <h3>歌词与 NFO</h3><p>控制歌词文件、内嵌歌词和媒体库元数据。</p>
+              <div class="checks">
+                <label><input type="checkbox" id="sLrc">生成同名 .lrc</label>
+                <label><input type="checkbox" id="sEmbed">歌词嵌入音频标签</label>
+                <label><input type="checkbox" id="sYrc">优先逐字歌词</label>
+                <label><input type="checkbox" id="sNfo">生成 NFO 元数据</label>
+              </div>
+            </section>
+            <section class="settings-group" data-settings-panel="notify" hidden>
+              <h3>通知</h3><p>飞书机器人或通用 JSON Webhook。</p>
+              <div class="form-grid">
+                <label class="field"><span>通知类型</span><select id="sNotifyType"><option value="feishu">飞书机器人</option><option value="webhook">通用 Webhook</option></select></label>
+                <label class="field"><span>Webhook 地址</span><input type="text" id="sNotifyUrl" placeholder="https://..."></label>
+                <label class="field"><span>加签密钥</span><input type="password" id="sNotifySecret" placeholder="可选"></label>
+              </div>
+              <div class="checks" id="sEvents" style="margin-top:14px"></div>
+            </section>
+            <section class="settings-group" data-settings-panel="performance" hidden>
+              <h3>性能与面板</h3><p>并发、限速、磁盘保护和访问令牌。</p>
+              <div class="form-grid three">
+                <label class="field"><span>下载并发数（1-8）</span><input type="number" id="sConc" min="1" max="8"></label>
+                <label class="field"><span>单轮下载上限</span><input type="number" id="sMaxRun" min="0"><span class="hint">0 表示不限</span></label>
+                <label class="field"><span>最小剩余空间（GB）</span><input type="number" id="sMinFree" min="0" step="0.5"></label>
+                <label class="field"><span>API 间隔最小值（秒）</span><input type="number" id="sDelayMin" min="0" step="0.5"></label>
+                <label class="field"><span>API 间隔最大值（秒）</span><input type="number" id="sDelayMax" min="0" step="0.5"></label>
+                <label class="field"><span>面板端口</span><input type="number" id="sWebPort" min="1" max="65535"></label>
+                <label class="field"><span>访问令牌</span><input type="text" id="sToken" placeholder="留空表示不启用"></label>
+              </div>
+              <div class="checks" style="margin-top:12px"><label><input type="checkbox" id="sWebEnabled">启用 Web 面板</label></div>
+            </section>
+            <section class="settings-group" data-settings-panel="advanced" hidden>
+              <h3>高级 YAML</h3><p>直接编辑完整配置。该操作会覆盖结构化表单中的同名字段。</p>
+              <textarea class="editor" id="cfgText" spellcheck="false"></textarea>
+              <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn" id="btnSaveYaml" type="button">应用 YAML</button></div>
+            </section>
+          </form>
+        </div>
+        <div class="save-bar">
+          <div class="save-state" id="saveState"><span class="dot"></span><span>已载入设置</span></div>
+          <button class="btn" id="btnNotifyTest" type="button" title="测试通知" aria-label="测试通知"><svg class="icon icon-sm"><use href="#i-activity"/></svg><span>测试通知</span></button>
+          <button class="btn primary" id="btnSaveSettings" type="button" aria-label="保存设置"><svg class="icon icon-sm"><use href="#i-check"/></svg><span>保存设置</span></button>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<nav class="mobile-nav" aria-label="移动端主导航">
+  <button class="nav-btn active" data-route="overview"><svg class="icon"><use href="#i-overview"/></svg><span>总览</span></button>
+  <button class="nav-btn" data-route="playlists"><svg class="icon"><use href="#i-playlist"/></svg><span>歌单</span></button>
+  <button class="nav-btn" data-route="library"><svg class="icon"><use href="#i-library"/></svg><span>音乐库</span></button>
+  <button class="nav-btn" data-route="settings"><svg class="icon"><use href="#i-settings"/></svg><span>设置</span></button>
+</nav>
+
+<dialog id="appDialog" aria-labelledby="dialogTitle">
+  <div class="modal">
+    <div class="modal-head"><h2 id="dialogTitle">详情</h2><button class="icon-btn" id="btnDialogClose" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button></div>
+    <div class="modal-body" id="dialogBody"></div>
+    <div class="modal-foot" id="dialogFoot"><button class="btn" id="btnDialogDone">关闭</button></div>
+  </div>
+</dialog>
+<div class="toast-box" id="toastBox" aria-live="polite"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const ROUTES = ['overview','playlists','library','settings'];
+const VIEW_META = {
+  overview:['总览','同步状态、最近运行和需要处理的问题'],
+  playlists:['歌单','管理同步来源和曲目状态'],
+  library:['音乐库','搜索、核对和补全本地文件'],
+  settings:['设置','修改计划、音质、歌词、通知和面板参数'],
+};
+const LEVELS = [
+  ['jymaster','超清母带'],['hires','Hi-Res'],['lossless','无损'],['exhigh','极高'],
+  ['higher','较高'],['standard','标准'],['jyeffect','高清臻音'],['sky','沉浸环绕'],
+  ['dolby','杜比全景声'],['vivid','臻音全景声'],
+];
+const EVENTS = [
+  ['on_start','同步开始'],['on_complete','每轮完成'],['on_changes','有变更'],
+  ['on_failed','下载失败'],['on_partial','部分未成功'],['on_login_expired','登录失效'],['on_error','轮次异常'],
+];
+const state = {
+  status:null,runs:[],lastRun:null,currentView:'overview',
+  playlistSig:'',settingsLoaded:false,configLoaded:false,
+  localFiles:[],localLoaded:false,localShown:80,settingsGroup:'sync',dirty:false,
+  track:{pid:0,name:'',offset:0,limit:100,q:'',status:'all',loading:false},
+  qrTimer:null,authPrompt:null,authEpoch:0,authBlocked:false,connError:false,
+};
+const tokenKey = 'wyydl_token';
+let token = localStorage.getItem(tokenKey) || '';
+
+function icon(name, cls='icon icon-sm') {
+  return `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+}
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function num(v) { return new Intl.NumberFormat('zh-CN').format(Number(v) || 0); }
+function fmtTime(v) {
+  if (!v) return '-';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v).replace('T',' ');
+  return new Intl.DateTimeFormat('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(d);
+}
+function fmtClock(v) {
+  if (!v) return '-';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '-';
+  return new Intl.DateTimeFormat('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false}).format(d);
+}
+function layoutName(v) { return {album:'按专辑',artist:'按歌手',flat:'歌曲平铺',playlist:'按歌单'}[v] || v || '-'; }
+function runStatus(v) { return {ok:'成功',error:'异常',login_expired:'登录失效',disk_full:'空间不足'}[v] || v || '-'; }
+function toast(message,type='info') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.setAttribute('role', type === 'err' ? 'alert' : 'status');
+  el.textContent = message;
+  $('#toastBox').append(el);
+  setTimeout(() => el.remove(), 5000);
+}
+function confirmDo(question, fn) { if (confirm(question)) fn(); }
+
+async function api(path, opt = {}, retried = false) {
+  if (state.authBlocked && !retried) throw new Error('访问令牌无效，请刷新页面后重试');
+  const epochAtRequest = state.authEpoch;
+  const request = {...opt, headers:{'X-Token':token,'Content-Type':'application/json',...(opt.headers || {})}};
+  if (request.body && typeof request.body !== 'string') request.body = JSON.stringify(request.body);
+  const r = await fetch(path, request);
+  if (r.status === 401 && retried) {
+    state.authBlocked = true;
+    throw new Error('访问令牌无效，请刷新页面后重试');
+  }
+  if (r.status === 401 && !retried) {
+    if (state.authEpoch !== epochAtRequest) return api(path,opt,true);
+    if (!state.authPrompt) {
+      state.authPrompt = (async () => {
+        token = prompt('请输入面板访问令牌（留空表示未启用）：') || '';
+        localStorage.setItem(tokenKey,token);
+        state.authEpoch += 1;
+      })().finally(() => { state.authPrompt = null; });
+    }
+    await state.authPrompt;
+    return api(path,opt,true);
+  }
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    throw new Error(data.detail || `HTTP ${r.status}`);
+  }
+  return r.json();
+}
+function setConnectionError(error) {
+  const hint = state.authBlocked ? '请刷新页面重新输入访问令牌。' : '页面会自动重试。';
+  $('#connBanner').textContent = `面板连接失败：${error?.message || '未知错误'}。${hint}`;
+  $('#connBanner').hidden = false;
+  state.connError = true;
+  $('#topDot').className = 'dot bad';
+  $('#topConnection').textContent = '连接异常';
+}
+function clearConnectionError() {
+  if (!state.connError) return;
+  $('#connBanner').hidden = true;
+  state.connError = false;
+}
+
+function route() {
+  const hash = location.hash.slice(1);
+  const view = ROUTES.includes(hash) ? hash : 'overview';
+  state.currentView = view;
+  $('#pageTitle').textContent = VIEW_META[view][0];
+  $('#pageSubtitle').textContent = VIEW_META[view][1];
+  $$('.view').forEach(el => { el.hidden = el.id !== `view-${view}`; });
+  $$('[data-route]').forEach(el => el.classList.toggle('active', el.dataset.route === view));
+  loadView(view);
+}
+function navigate(view) { if (view !== state.currentView) location.hash = view; else loadView(view); }
+function loadView(view) {
+  if (view === 'overview') { refreshStatus(); refreshRuns(); }
+  if (view === 'playlists') refreshStatus();
+  if (view === 'library' && !state.localLoaded) loadLocal();
+  if (view === 'settings') loadSettings();
+}
+
+async function refreshStatus() {
+  try {
+    const s = await api('/api/status');
+    state.status = s;
+    clearConnectionError();
+    $('#topDot').className = `dot ${s.cookie_ok ? (s.running ? 'run' : 'ok') : 'bad'}`;
+    $('#topConnection').textContent = s.cookie_ok ? (s.running ? '同步中' : '服务正常') : '需要登录';
+    $('#sideLogin').textContent = s.cookie_ok ? '有效' : '失效';
+    $('#sideNextRun').textContent = fmtTime(s.next_run);
+    $('#sideDisk').textContent = s.disk?.free_gb != null ? `${s.disk.free_gb} GB` : '-';
+    $('#sideVersion').textContent = `wyydl v${s.version}`;
+    $('#heroNextRun').textContent = fmtTime(s.next_run);
+    $('#heroSchedule').textContent = s.schedule || '-';
+    $('#heroLayout').textContent = layoutName(s.layout);
+    $('#heroDisk').textContent = s.disk?.free_gb != null ? `${s.disk.free_gb} / ${s.disk.total_gb} GB` : '-';
+    $('#statLogin').textContent = s.cookie_ok ? '有效' : '失效';
+    $('#statSchedule').textContent = s.schedule || '-';
+    $('#statDisk').textContent = s.disk?.free_pct != null ? `${s.disk.free_pct}% 可用` : '-';
+    $('#statVersion').textContent = `v${s.version}`;
+    $('#btnGlobalSync').disabled = !!s.running;
+    $('#btnHeroSync').disabled = !!s.running;
+    $('#btnGlobalSync span').textContent = s.running ? '同步中' : '立即同步';
+    renderOverview();
+    renderPlaylists();
+    renderProgress();
+    renderFailures();
+    await checkUpgrade(s.version);
+  } catch (e) { setConnectionError(e); }
+}
+
+function renderOverview() {
+  const s = state.status;
+  if (!s) return;
+  const total = s.playlists.reduce((n,p) => n + Number(p.total || 0), 0);
+  const ok = s.playlists.reduce((n,p) => n + Number(p.ok || 0), 0);
+  const pending = s.playlists.reduce((n,p) => n + Number(p.pending || 0), 0);
+  const failed = s.playlists.reduce((n,p) => n + Number(p.failed || 0), 0);
+  $('#kpiTotal').textContent = num(total);
+  $('#kpiOk').textContent = num(ok);
+  $('#kpiPending').textContent = num(pending);
+  $('#kpiFailed').textContent = num(failed);
+  $('#navPlaylistCount').textContent = s.playlists.length;
+  $('#btnRetryFailed').hidden = failed === 0 || s.running;
+  $('#btnLoginExpired').hidden = !!s.cookie_ok;
+  if (!s.cookie_ok) {
+    $('#heroTitle').textContent = '登录态已失效';
+    $('#heroCopy').textContent = '重新扫码登录后，定时同步和手动同步才能继续。';
+  } else if (s.running) {
+    $('#heroTitle').textContent = '正在同步音乐库';
+    $('#heroCopy').textContent = '任务运行中，可以切换到歌单或音乐库继续查看。';
+  } else if (failed > 0) {
+    $('#heroTitle').textContent = `${num(failed)} 首歌曲需要处理`;
+    $('#heroCopy').textContent = '可以进入失败中心重试，或查看具体原因后手动匹配。';
+  } else {
+    $('#heroTitle').textContent = '音乐库状态正常';
+    $('#heroCopy').textContent = `已入库 ${num(ok)} 首，等待 ${num(pending)} 首，下次运行 ${fmtTime(s.next_run)}。`;
+  }
+}
+
+function renderProgress() {
+  const s = state.status;
+  if (!s) return;
+  const p = s.progress || {};
+  $('#progressMeta').textContent = s.running ? (p.detail || '运行中') : '空闲';
+  $('#progressStage').textContent = s.running ? (p.stage || '同步中') : '没有正在运行的同步任务';
+  $('#progressDetail').textContent = p.done != null ? `${p.done} / ${p.total ?? '?'}` : (p.detail || '-');
+  $('#progressBar').style.width = p.done != null && p.total ? `${Math.round(p.done / p.total * 100)}%` : '0%';
+  const mb = n => (Number(n || 0) / 1048576).toFixed(1);
+  const active = p.active || [];
+  $('#activeList').innerHTML = active.map(a => {
+    const pct = a.total ? Math.min(100, Math.round(a.downloaded / a.total * 100)) : 0;
+    return `<div class="active-item"><div class="active-head"><span>${esc([a.artist,a.title].filter(Boolean).join(' - '))}</span><span>${a.total ? `${pct}% · ${mb(a.downloaded)}/${mb(a.total)} MB` : `${mb(a.downloaded)} MB`}</span></div><div class="bar"><i style="width:${pct}%"></i></div></div>`;
+  }).join('');
+  const recent = (p.recent || []).slice().reverse();
+  $('#recentList').innerHTML = recent.map(r => `<div class="row-item"><div><div class="row-title">${esc([r.artist,r.title].filter(Boolean).join(' - '))}</div><div class="row-sub">${esc(r.ok ? r.level : (r.reason || '失败'))}</div></div><span class="tag ${r.ok ? 'ok' : 'bad'}">${r.ok ? '完成' : '失败'}</span></div>`).join('');
+}
+
+function renderPlaylists() {
+  const s = state.status;
+  if (!s) return;
+  const sig = JSON.stringify(s.playlists);
+  if (sig === state.playlistSig && state.currentView !== 'playlists') return;
+  state.playlistSig = sig;
+  $('#playlistDisk').textContent = s.disk?.free_gb != null ? `磁盘可用 ${s.disk.free_gb} GB` : '';
+  const totalFailed = s.playlists.reduce((n,p) => n + Number(p.failed || 0), 0);
+  $('#playlistSummary').textContent = `${s.playlists.length} 个来源 · ${num(totalFailed)} 首失败`;
+  $('#playlistList').innerHTML = s.playlists.map(p => `
+    <div class="playlist-row">
+      <div><button class="link-btn" onclick="openTracks(${p.id})">${esc(p.name || p.id)}</button><div class="row-sub">${p.configured ? '已配置' : '已解除关联'}</div></div>
+      <div class="mini-stat"><b>${num(p.total)}</b><span>曲目</span></div>
+      <div class="mini-stat"><b>${num(p.ok)}</b><span>入库</span></div>
+      <div class="mini-stat"><b>${num(p.failed)}</b><span>失败</span></div>
+      <div class="playlist-time">${esc(p.last_sync || '-')}</div>
+      <div class="row-actions"><button class="btn small" onclick="syncOne(${p.id})">同步</button><button class="btn small ghost" onclick="removePlaylist(${p.id})">移除</button></div>
+    </div>`).join('') || '<div class="empty">尚未添加歌单或特殊来源</div>';
+}
+
+function renderFailures() {
+  const s = state.status;
+  if (!s) return;
+  const failed = s.playlists.filter(p => Number(p.failed) > 0);
+  $('#failureMeta').textContent = `${failed.length} 个来源`;
+  $('#failureList').innerHTML = failed.map(p => `<div class="row-item"><div><div class="row-title">${esc(p.name)}</div><div class="row-sub">${num(p.failed)} 首失败 · 最近同步 ${esc(p.last_sync || '-')}</div></div><div class="row-actions"><button class="btn small" onclick="openTracks(${p.id},'failed')">查看失败</button><button class="btn small primary" onclick="retryFailed(${p.id})">快速重试</button></div></div>`).join('') || '<div class="empty">没有需要处理的失败歌曲</div>';
+}
+
+async function refreshRuns() {
+  try {
+    const data = await api('/api/runs?limit=8');
+    state.runs = data.runs || [];
+    state.lastRun = state.runs[0]?.summary || null;
+    $('#lastRunMeta').textContent = state.runs[0] ? fmtTime(state.runs[0].finished) : '-';
+    $('#runList').innerHTML = state.runs.map(r => {
+      const s = r.summary || {};
+      return `<div class="row-item"><div><div class="row-title">${esc(r.finished)}</div><div class="row-sub">新增 ${num(s.added)} · 升级 ${num(s.upgraded)} · 失败 ${num(s.failed)} · 部分 ${num(s.partial)}</div></div><span class="tag ${r.status === 'ok' ? 'ok' : 'bad'}">${esc(runStatus(r.status))}</span></div>`;
+    }).join('') || '<div class="empty">暂无运行记录</div>';
+  } catch (e) { setConnectionError(e); }
+}
+
+async function refreshLogs() {
+  try {
+    const {text} = await api('/api/logs?lines=400');
+    const box = $('#logBox');
+    box.textContent = text || '(空)';
+    box.scrollTop = box.scrollHeight;
+  } catch (e) { toast(e.message,'err'); }
+}
+
+function setDirty() {
+  state.dirty = true;
+  const el = $('#saveState');
+  el.classList.add('dirty');
+  el.innerHTML = '<span class="dot run"></span><span>有未保存修改</span>';
+}
+function resetDirty() {
+  state.dirty = false;
+  const el = $('#saveState');
+  el.classList.remove('dirty');
+  el.innerHTML = '<span class="dot ok"></span><span>设置已保存</span>';
+}
+function markSaving() {
+  $('#saveState').classList.remove('dirty');
+  $('#saveState').innerHTML = '<span class="dot run"></span><span>正在保存</span>';
+}
+
+async function loadSettings() {
+  if (state.settingsLoaded) return;
+  try {
+    const s = await api('/api/settings');
+    $('#sSchedule').value = s.schedule || '';
+    $('#sLayout').value = s.layout || 'album';
+    $('#sNaming').value = s.naming || '';
+    $('#sMirror').value = String(!!s.mirror);
+    $('#sTrashDays').value = s.trash_days ?? 30;
+    $('#sUpgrade').checked = !!s.upgrade_existing;
+    $('#sLrc').checked = !!s.lrc;
+    $('#sEmbed').checked = !!s.embed;
+    $('#sYrc').checked = !!s.yrc;
+    $('#sNfo').checked = !!s.nfo;
+    $('#sNotifyType').value = s.notify_type || 'feishu';
+    $('#sNotifyUrl').value = s.notify_url || '';
+    $('#sNotifySecret').value = s.notify_secret || '';
+    $('#sConc').value = s.concurrency ?? 3;
+    $('#sMaxRun').value = s.max_per_run ?? 0;
+    $('#sMinFree').value = s.min_free_space ?? 2;
+    $('#sDelayMin').value = s.delay_min ?? 1;
+    $('#sDelayMax').value = s.delay_max ?? 3;
+    $('#sToken').value = s.web_token || '';
+    $('#sWebPort').value = s.web_port ?? 8286;
+    $('#sWebEnabled').checked = !!s.web_enabled;
+    $('#sChain').innerHTML = LEVELS.map(([k,label]) => `<label><input type="checkbox" value="${k}" ${(s.chain || []).includes(k) ? 'checked' : ''}>${label} <span class="hint">${k}</span></label>`).join('');
+    const ev = s.notify_events || {};
+    $('#sEvents').innerHTML = EVENTS.map(([k,label]) => `<label><input type="checkbox" data-event="${k}" ${ev[k] ? 'checked' : ''}>${label}</label>`).join('');
+    state.settingsLoaded = true;
+    resetDirty();
+    bindSettingsDirty();
+    loadConfig();
+  } catch (e) { setConnectionError(e); }
+}
+function collectSettings() {
+  return {
+    schedule:$('#sSchedule').value.trim(),layout:$('#sLayout').value,naming:$('#sNaming').value.trim(),
+    mirror:$('#sMirror').value === 'true',trash_days:+$('#sTrashDays').value || 30,
+    chain:LEVELS.map(([k]) => k).filter(k => $(`#sChain input[value="${k}"]`).checked),
+    upgrade_existing:$('#sUpgrade').checked,lrc:$('#sLrc').checked,embed:$('#sEmbed').checked,
+    yrc:$('#sYrc').checked,nfo:$('#sNfo').checked,
+    notify_type:$('#sNotifyType').value,notify_url:$('#sNotifyUrl').value.trim(),notify_secret:$('#sNotifySecret').value.trim(),
+    events:Object.fromEntries(EVENTS.map(([k]) => [k,$(`#sEvents input[data-event="${k}"]`).checked])),
+    concurrency:+$('#sConc').value || 3,max_per_run:+$('#sMaxRun').value || 0,min_free_space:+$('#sMinFree').value || 2,
+    delay_min:+$('#sDelayMin').value || 1,delay_max:+$('#sDelayMax').value || 3,
+    web_enabled:$('#sWebEnabled').checked,web_port:+$('#sWebPort').value || 8286,web_token:$('#sToken').value.trim(),
+  };
+}
+function bindSettingsDirty() {
+  $$('#settingsForm input,#settingsForm select,#settingsForm textarea').forEach(el => {
+    if (el.dataset.dirtyBound) return;
+    el.dataset.dirtyBound = '1';
+    el.addEventListener('input',setDirty);
+    el.addEventListener('change',setDirty);
+  });
+}
+async function saveSettings(silent=false) {
+  markSaving();
+  try {
+    await api('/api/settings',{method:'PUT',body:collectSettings()});
+    resetDirty();
+    if (!silent) toast('设置已保存并生效','ok');
+    await refreshStatus();
+  } catch (e) {
+    setDirty();
+    toast(e.message,'err');
+    throw e;
+  }
+}
+async function loadConfig(force=false) {
+  if (state.configLoaded && !force) return;
+  try {
+    const {content} = await api('/api/config');
+    $('#cfgText').value = content;
+    state.configLoaded = true;
+  } catch (e) { setConnectionError(e); }
+}
+function showSettingsGroup(group) {
+  state.settingsGroup = group;
+  $$('[data-settings-panel]').forEach(el => { el.hidden = el.dataset.settingsPanel !== group; });
+  $$('[data-setting-group]').forEach(el => el.classList.toggle('active', el.dataset.settingGroup === group));
+  if (group === 'advanced') loadConfig();
+}
+
+async function loadLocal(force=false) {
+  if (state.localLoaded && !force) return;
+  try {
+    const {files} = await api('/api/local/files');
+    state.localFiles = files || [];
+    state.localLoaded = true;
+    state.localShown = 80;
+    $('#navLibraryCount').textContent = state.localFiles.filter(f => f.missing).length;
+    renderLocal();
+  } catch (e) { setConnectionError(e); }
+}
+function filteredLocal() {
+  const q = $('#localSearch').value.trim().toLowerCase();
+  const only = $('#onlyMissing').checked;
+  return state.localFiles.map((f,i) => ({f,i}))
+    .filter(({f}) => !only || f.missing)
+    .filter(({f}) => !q || [f.title,f.artist,f.album,f.name].some(v => (v || '').toLowerCase().includes(q)));
+}
+function renderLocal() {
+  const rows = filteredLocal();
+  const shown = rows.slice(0,state.localShown);
+  $('#localList').innerHTML = shown.map(({f,i}) => `
+    <div class="local-row">
+      <div><div class="row-title">${esc(f.title || f.name)}</div><div class="row-sub">${esc(f.name)}</div></div>
+      <div class="local-artist"><div class="row-sub">${esc(f.artist || '未知歌手')}</div></div>
+      <div class="local-album"><div class="row-sub">${esc(f.album || '未知专辑')}</div></div>
+      <div class="local-actions">
+        <span class="tag ${f.missing ? 'bad' : 'ok'}">${f.missing ? '缺失' : '已入库'}</span>
+        <button class="btn small" onclick="openMatch(${i})">匹配</button>
+        <details class="action-menu"><summary aria-label="更多操作">${icon('more')}</summary><div class="menu-pop"><button onclick="refetchFile(${i})">重新刮削</button><button onclick="openEdit(${i})">编辑信息</button></div></details>
+      </div>
+    </div>`).join('') || '<div class="empty">没有符合当前筛选条件的文件</div>';
+  $('#localPagerInfo').textContent = `显示 ${Math.min(shown.length,rows.length)} / ${rows.length} 个文件`;
+  $('#btnLocalMore').hidden = shown.length >= rows.length;
+}
+
+function formatSize(bytes) {
+  const n = Number(bytes) || 0;
+  if (n >= 1048576) return `${(n / 1048576).toFixed(1)} MB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${n} B`;
+}
+async function openDuplicates() {
+  openDialog('检查重复文件','<div class="empty">正在扫描同目录、同文件名的跨格式文件…</div>',{wide:true,footer:false});
+  try {
+    const d = await api('/api/local/duplicates');
+    if (!d.groups.length) {
+      $('#dialogBody').innerHTML = '<div class="empty">没有发现同名的跨格式重复文件。</div>';
+      $('#dialogFoot').hidden = false;
+      $('#dialogFoot').innerHTML = '<button class="btn" id="btnDupClose">关闭</button>';
+      $('#btnDupClose').onclick = closeDialog;
+      return;
+    }
+    $('#dialogBody').innerHTML = `<p class="hint">每组默认保留优先级最高的文件，其他文件会移动到 _trash，不会直接删除。可以手动调整勾选。</p><div class="list">${d.groups.map((g,gi) => `<section class="surface" style="margin-top:12px"><div class="surface-head"><h3>${esc(g.stem)}</h3><span class="meta">${g.files.length} 个文件</span></div><div>${g.files.map((f,fi) => `<label class="row-item" style="cursor:pointer"><div><div class="row-title">${esc(f.name)}</div><div class="row-sub">${esc(f.artist || '未知歌手')} · ${formatSize(f.size)}</div></div><div class="row-actions">${fi === 0 ? '<span class="tag ok">建议保留</span>' : ''}<input type="checkbox" class="dup-check" data-path="${esc(f.path)}" ${fi === 0 ? '' : 'checked'} aria-label="隔离 ${esc(f.name)}"></div></label>`).join('')}</div></section>`).join('')}</div>`;
+    $('#dialogFoot').hidden = false;
+    $('#dialogFoot').innerHTML = '<button class="btn" id="btnDupCancel">取消</button><button class="btn primary" id="btnDupQuarantine">隔离所选文件</button>';
+    $('#btnDupCancel').onclick = closeDialog;
+    $('#btnDupQuarantine').onclick = quarantineSelected;
+  } catch (e) {
+    $('#dialogBody').innerHTML = `<div class="empty">扫描失败：${esc(e.message)}</div>`;
+  }
+}
+async function quarantineSelected() {
+  const paths = $$('.dup-check:checked').map(el => el.dataset.path);
+  if (!paths.length) return toast('没有勾选需要隔离的文件','warn');
+  confirmDo(`将 ${paths.length} 个文件移入 _trash？可在保留期内恢复或手动清空。`,async () => {
+    try {
+      const r = await api('/api/local/quarantine',{method:'POST',body:{paths}});
+      toast(`已隔离 ${r.moved} 个文件`,'ok');
+      closeDialog();
+      loadLocal(true);
+      refreshStatus();
+    } catch (e) { toast(e.message,'err'); }
+  });
+}
+async function clearTrash() {
+  confirmDo('永久删除 _trash 回收目录中的全部文件？此操作不可恢复。',async () => {
+    try {
+      const r = await api('/api/trash/clear',{method:'POST'});
+      toast(`已删除 ${r.deleted} 个回收文件`,'ok');
+    } catch (e) { toast(e.message,'err'); }
+  });
+}
+
+function openDialog(title, body, {wide=false,footer=true}={}) {
+  $('#dialogTitle').textContent = title;
+  $('#dialogBody').innerHTML = body;
+  $('#dialogFoot').hidden = !footer;
+  $('#appDialog').classList.toggle('wide',wide);
+  if (!$('#appDialog').open) $('#appDialog').showModal();
+}
+function closeDialog() { if ($('#appDialog').open) $('#appDialog').close(); }
+function stopQr() { if (state.qrTimer) { clearInterval(state.qrTimer); state.qrTimer = null; } }
+
+async function openTracks(pid,status='all') {
+  state.track = {pid,name:'',offset:0,limit:100,q:'',status,loading:false};
+  openDialog('曲目详情','<div class="empty">正在加载曲目…</div>',{wide:true});
+  loadTracks();
+}
+async function loadTracks() {
+  if (state.track.loading) return;
+  const t = state.track;
+  t.loading = true;
+  try {
+    const p = new URLSearchParams({limit:String(t.limit),offset:String(t.offset),q:t.q,status:t.status});
+    const d = await api(`/api/tracks/${t.pid}?${p}`);
+    t.name = d.name;
+    $('#dialogTitle').textContent = `${d.name} · ${num(d.all_total)} 首`;
+    $('#dialogBody').innerHTML = `
+      <div class="track-filters">
+        <label class="search">${icon('search')}<input id="trackSearch" type="text" value="${esc(t.q)}" placeholder="搜索标题、歌手或专辑"></label>
+        <select id="trackStatus"><option value="all">全部状态</option><option value="failed">失败</option><option value="ok">已入库</option><option value="pending">等待</option></select>
+        <button class="btn" id="btnTrackSearch">搜索</button>
+      </div>
+      <div class="track-stats"><span class="tag">全部 ${num(d.stats.all)}</span><span class="tag ok">已入库 ${num(d.stats.ok)}</span><span class="tag warn">等待 ${num(d.stats.pending)}</span><span class="tag bad">失败 ${num(d.stats.failed)}</span>${d.stats.failed ? `<button class="btn small primary" onclick="retryFailed(${t.pid})">快速重试失败歌曲</button>` : ''}</div>
+      <div class="table-wrap mobile-cards"><table><thead><tr><th>#</th><th>标题</th><th>歌手</th><th>状态</th><th>音质</th><th></th></tr></thead><tbody>${d.tracks.map(x => {
+        const st = x.status === 'ok' ? ['已入库','ok'] : x.status.startsWith('failed') ? ['失败','bad'] : ['等待','warn'];
+        return `<tr><td data-label="#">${x.pos + 1}</td><td data-label="标题">${esc(x.title)} ${x.dup ? '<span class="tag info">重复</span>' : ''}</td><td data-label="歌手">${esc(x.artist)}</td><td data-label="状态"><span class="tag ${st[1]}">${st[0]}</span></td><td data-label="音质">${esc(x.level || '-')}</td><td data-label="原因" class="reason">${esc(x.last_error || '')}</td></tr>`;
+      }).join('') || '<tr><td colspan="6" class="empty">没有符合条件的曲目</td></tr>'}</tbody></table></div>
+      <div class="pager"><span class="pager-info">${d.total ? `${d.offset + 1}-${Math.min(d.offset + d.limit,d.total)} / ${d.total}` : '0 条'}</span><div class="row-actions"><button class="btn small" id="btnTrackPrev" ${d.offset <= 0 ? 'disabled' : ''}>上一页</button><button class="btn small" id="btnTrackNext" ${d.offset + d.limit >= d.total ? 'disabled' : ''}>下一页</button></div></div>`;
+    $('#trackStatus').value = t.status;
+    $('#btnTrackSearch').onclick = () => { t.q = $('#trackSearch').value.trim(); t.offset = 0; loadTracks(); };
+    $('#trackSearch').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('#btnTrackSearch').click(); } };
+    $('#trackStatus').onchange = e => { t.status = e.target.value; t.offset = 0; loadTracks(); };
+    $('#btnTrackPrev').onclick = () => { t.offset = Math.max(0,t.offset - t.limit); loadTracks(); };
+    $('#btnTrackNext').onclick = () => { t.offset += t.limit; loadTracks(); };
+  } catch (e) {
+    $('#dialogBody').innerHTML = `<div class="empty">加载失败：${esc(e.message)}</div>`;
+  } finally { t.loading = false; }
+}
+
+async function openAccountPlaylists() {
+  openDialog('账号歌单','<div class="empty">正在获取账号歌单…</div>');
+  try {
+    const d = await api('/api/account/playlists');
+    $('#dialogBody').innerHTML = `<p class="hint">共 ${d.playlists.length} 个歌单，添加后立即开始同步。</p><div class="list">${d.playlists.map(p => `<div class="row-item"><div><div class="row-title">${esc(p.name)}</div><div class="row-sub">${num(p.total)} 首</div></div>${p.configured ? '<span class="tag ok">已添加</span>' : `<button class="btn small" onclick="addAccountPlaylist(${p.id},this)">添加</button>`}</div>`).join('')}</div>`;
+  } catch (e) { $('#dialogBody').innerHTML = `<div class="empty">获取失败：${esc(e.message)}</div>`; }
+}
+async function addAccountPlaylist(id,btn) {
+  try {
+    const r = await api('/api/playlists',{method:'POST',body:{id:String(id)}});
+    btn.outerHTML = '<span class="tag ok">已添加</span>';
+    toast(r.sync_started ? '已添加并开始同步' : '已添加，当前任务结束后同步','ok');
+    refreshStatus();
+  } catch (e) { toast(e.message,'err'); }
+}
+async function startQr() {
+  stopQr();
+  openDialog('扫码登录','<div class="empty">正在生成二维码…</div>',{footer:false});
+  try {
+    const d = await api('/api/login/qr',{method:'POST'});
+    $('#dialogBody').innerHTML = `<p class="hint" style="text-align:center">使用网易云音乐 App 扫码并确认登录。</p><img class="qr-img" src="${esc(d.img)}" alt="网易云登录二维码"><p id="qrMessage" style="text-align:center">等待扫码…</p><div style="text-align:center"><button class="btn small" id="btnQrAgain">重新生成</button></div>`;
+    $('#btnQrAgain').onclick = startQr;
+    state.qrTimer = setInterval(async () => {
+      try {
+        const r = await api(`/api/login/qr/poll/${encodeURIComponent(d.key)}`);
+        $('#qrMessage').textContent = r.message;
+        if (r.saved) {
+          stopQr();
+          $('#qrMessage').textContent = '登录成功，凭证已保存';
+          setTimeout(() => { closeDialog(); refreshStatus(); },800);
+        } else if (r.code === 800 || r.code === 803) stopQr();
+      } catch (e) { stopQr(); $('#qrMessage').textContent = `轮询失败：${e.message}`; }
+    },2200);
+  } catch (e) { $('#dialogBody').innerHTML = `<div class="empty">生成二维码失败：${esc(e.message)}</div>`; }
+}
+
+async function syncOne(id) {
+  confirmDo('立即同步这个歌单？',async () => {
+    try { await api('/api/sync',{method:'POST',body:{playlists:[id]}}); toast('已开始同步','ok'); refreshStatus(); }
+    catch (e) { toast(e.message,'err'); }
+  });
+}
+async function removePlaylist(id) {
+  confirmDo('从同步列表移除这个来源？本地文件会保留。',async () => {
+    try { await api(`/api/playlists/${id}`,{method:'DELETE'}); toast('已移除','ok'); refreshStatus(); }
+    catch (e) { toast(e.message,'err'); }
+  });
+}
+async function addPlaylist() {
+  const raw = $('#plId').value.trim();
+  if (!raw) return toast('请输入歌单 ID 或链接','warn');
+  const match = raw.match(/playlist\/(\d+)/) || raw.match(/(\d{5,})/);
+  if (!match) return toast('无法从输入中识别歌单 ID','warn');
+  try {
+    const r = await api('/api/playlists',{method:'POST',body:{id:match[1],name:$('#plName').value}});
+    $('#plId').value = ''; $('#plName').value = '';
+    toast(r.sync_started ? '已添加并开始同步' : '已添加，当前任务结束后同步','ok');
+    refreshStatus();
+  } catch (e) { toast(e.message,'err'); }
+}
+async function addSpecialSource() {
+  try {
+    const r = await api('/api/playlists',{method:'POST',body:{source:$('#sourceSelect').value}});
+    toast(r.sync_started ? '已添加并开始同步' : '已添加，当前任务结束后同步','ok');
+    refreshStatus();
+  } catch (e) { toast(e.message,'err'); }
+}
+
+async function refetchFile(i) {
+  const f = state.localFiles[i];
+  confirmDo(`重新刮削「${f.title || f.name}」？会重写标签、封面、歌词和 NFO。`,async () => {
+    try { const r = await api('/api/local/refetch',{method:'POST',body:{path:f.path}}); toast(`已重新刮削：${r.artist} - ${r.title}`,'ok'); loadLocal(true); }
+    catch (e) { toast(e.message,'err'); }
+  });
+}
+async function openMatch(i) {
+  const f = state.localFiles[i];
+  const initial = f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g,' ');
+  openDialog('匹配歌曲',`<p class="hint">为「${esc(f.name)}」选择网易云曲目</p><div class="toolbar" style="margin:10px 0"><label class="search">${icon('search')}<input id="matchQuery" value="${esc(initial)}" placeholder="歌名 / 歌手"></label><button class="btn" id="btnMatchSearch">搜索</button></div><div class="list" id="matchResults"><div class="empty">输入关键词开始搜索</div></div>`);
+  const run = async () => {
+    const q = $('#matchQuery').value.trim();
+    if (!q) return;
+    $('#matchResults').innerHTML = '<div class="empty">搜索中…</div>';
+    try {
+      const d = await api(`/api/search?keywords=${encodeURIComponent(q)}`);
+      $('#matchResults').innerHTML = d.songs.map(s => `<div class="row-item"><div><div class="row-title">${esc(s.name)}</div><div class="row-sub">${esc(s.artists)} · ${esc(s.album)} · ${Math.floor((s.duration || 0) / 60)}:${String((s.duration || 0) % 60).padStart(2,'0')}</div></div><button class="btn small" onclick="pickMatch(${s.id},${i})">匹配</button></div>`).join('') || '<div class="empty">没有搜索结果</div>';
+    } catch (e) { $('#matchResults').innerHTML = `<div class="empty">搜索失败：${esc(e.message)}</div>`; }
+  };
+  $('#btnMatchSearch').onclick = run;
+  $('#matchQuery').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); run(); } };
+  run();
+}
+async function pickMatch(sid,i) {
+  const f = state.localFiles[i];
+  try {
+    const r = await api('/api/local/match',{method:'POST',body:{sid,path:f.path}});
+    toast(`已匹配：${r.artist} - ${r.title}`,'ok');
+    closeDialog(); loadLocal(true);
+  } catch (e) { toast(e.message,'err'); }
+}
+function openEdit(i) {
+  const f = state.localFiles[i];
+  openDialog('编辑歌曲信息',`<div class="form-grid"><label class="field"><span>标题</span><input id="editTitle" value="${esc(f.title || f.name)}"></label><label class="field"><span>歌手</span><input id="editArtist" value="${esc(f.artist || '')}"></label><label class="field"><span>专辑</span><input id="editAlbum" value="${esc(f.album || '')}"></label><label class="field"><span>音轨号</span><input id="editTrack" type="number" value="0"></label></div>`);
+  $('#dialogFoot').hidden = false;
+  $('#dialogFoot').innerHTML = `<button class="btn" id="btnEditCancel">取消</button><button class="btn primary" id="btnEditSave">保存</button>`;
+  $('#btnEditCancel').onclick = closeDialog;
+  $('#btnEditSave').onclick = async () => {
+    try {
+      const r = await api('/api/local/edit',{method:'PUT',body:{path:f.path,title:$('#editTitle').value,artist:$('#editArtist').value,album:$('#editAlbum').value,track:+$('#editTrack').value || 0}});
+      toast(`已保存：${r.artist} - ${r.title}`,'ok'); closeDialog(); loadLocal(true);
+    } catch (e) { toast(e.message,'err'); }
+  };
+}
+
+let upgradeChecked = false;
+async function checkUpgrade(current) {
+  if (upgradeChecked || !current) return;
+  upgradeChecked = true;
+  try {
+    const u = await api('/api/upgrade');
+    if (u.has_update) {
+      const el = $('#sideVersion');
+      el.innerHTML = `wyydl v${esc(current)} <a href="${esc(u.url)}" target="_blank" rel="noopener" style="color:var(--amber)">新版本 ${esc(u.latest)}</a>`;
+    }
+  } catch (e) { /* 升级检查失败不影响主界面 */ }
+}
+
+$$('[data-route]').forEach(el => el.addEventListener('click',() => navigate(el.dataset.route)));
+$$('[data-setting-group]').forEach(el => el.addEventListener('click',() => showSettingsGroup(el.dataset.settingGroup)));
+$('#btnGlobalSync').onclick = () => confirmDo('立即同步所有已配置目标？',async () => { try { await api('/api/sync',{method:'POST',body:{}}); toast('已开始同步','ok'); refreshStatus(); } catch (e) { toast(e.message,'err'); } });
+$('#btnHeroSync').onclick = $('#btnGlobalSync').onclick;
+$('#btnGlobalLogin').onclick = startQr;
+$('#btnLoginExpired').onclick = startQr;
+async function retryFailed(playlistId=null) {
+  const scope = playlistId == null ? '所有来源' : '当前歌单';
+  confirmDo(`只重试${scope}中的失败歌曲？正常歌曲不会重新校验。`,async () => {
+    try {
+      const body = playlistId == null ? {} : {playlists:[playlistId]};
+      const r = await api('/api/retry-failed',{method:'POST',body});
+      if (!r.started) return toast('没有可重试的失败歌曲','warn');
+      toast(`已启动 ${r.songs ?? r.reset} 首失败歌曲的快速重试`,'ok');
+      refreshStatus();
+    } catch (e) { toast(e.message,'err'); }
+  });
+}
+$('#btnRetryFailed').onclick = () => retryFailed();
+$('#btnLogRefresh').onclick = e => { e.preventDefault(); refreshLogs(); };
+$('#logDetails').addEventListener('toggle',() => { if ($('#logDetails').open) refreshLogs(); });
+$('#btnAccountPlaylists').onclick = openAccountPlaylists;
+$('#btnAddPlaylist').onclick = addPlaylist;
+$('#btnAddSource').onclick = addSpecialSource;
+$('#btnDuplicates').onclick = openDuplicates;
+$('#btnClearTrash').onclick = clearTrash;
+$('#btnLocalRefresh').onclick = () => loadLocal(true);
+$('#localSearch').oninput = () => { state.localShown = 80; renderLocal(); };
+$('#onlyMissing').onchange = () => { state.localShown = 80; renderLocal(); };
+$('#btnLocalMore').onclick = () => { state.localShown += 80; renderLocal(); };
+$('#btnSaveSettings').onclick = () => confirmDo('保存设置并立即生效？',() => saveSettings().catch(() => {}));
+$('#btnNotifyTest').onclick = () => confirmDo('保存设置并发送测试通知？',async () => { try { await saveSettings(true); await api('/api/notify/test',{method:'POST'}); toast('测试通知已发送','ok'); } catch (e) { toast(e.message,'err'); } });
+$('#btnSaveYaml').onclick = () => confirmDo('应用完整 YAML 配置？这会覆盖表单中的同名字段。',async () => { try { await api('/api/config',{method:'PUT',body:{content:$('#cfgText').value}}); state.settingsLoaded = false; await loadSettings(); toast('YAML 已应用','ok'); } catch (e) { toast(e.message,'err'); } });
+$('#btnDialogClose').onclick = closeDialog;
+$('#btnDialogDone').onclick = closeDialog;
+$('#appDialog').addEventListener('close',() => { stopQr(); $('#dialogFoot').innerHTML = '<button class="btn" id="btnDialogDone">关闭</button>'; $('#btnDialogDone').onclick = closeDialog; });
+window.addEventListener('beforeunload',e => { if (state.dirty) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('hashchange',route);
+document.addEventListener('visibilitychange',() => { if (!document.hidden) refreshStatus(); });
+
+async function init() {
+  bindSettingsDirty();
+  route();
+  await refreshStatus();
+  await refreshRuns();
+  setInterval(() => { if (!document.hidden) refreshStatus(); },4000);
+  setInterval(() => { if (!document.hidden && state.currentView === 'overview') refreshRuns(); },15000);
+  setInterval(() => { if (!document.hidden && state.currentView === 'overview' && $('#logDetails').open) refreshLogs(); },12000);
+}
+init().catch(e => { console.error(e); setConnectionError(e); });
+</script>
+</body>
+</html>

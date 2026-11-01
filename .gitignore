@@ -7,7 +7,8 @@ __pycache__/
 sync/data/
 
 # 构建产物
-fpk/wyydl.fpk
+fpk/*.fpk
+fpk/SHA256SUMS*
 fpk/app/docker/sync/
 
 # macOS
